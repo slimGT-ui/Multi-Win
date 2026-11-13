@@ -1,6 +1,7 @@
 ﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
@@ -807,20 +808,41 @@ public partial class MainWindow : Window
             Directory.CreateDirectory(dir);
             bool isLocal = !string.IsNullOrEmpty(img.LocalPath);
             isoPath = isLocal ? img.LocalPath! : Path.Combine(dir, Path.GetFileName(img.Id) + ".iso");
+            string completionMarker = isoPath + ".complete";
+            string markerPrefix = $"{img.DownloadUrl}\n{img.SizeBytes}\n{img.Sha256}\n";
+            bool cachedComplete = false;
+            if (!isLocal && File.Exists(isoPath) && File.Exists(completionMarker))
+            {
+                try
+                {
+                    string expectedMarker = markerPrefix +
+                        new FileInfo(isoPath).Length.ToString(CultureInfo.InvariantCulture);
+                    cachedComplete = File.ReadAllText(completionMarker) == expectedMarker;
+                }
+                catch { }
+            }
+            // Old cache entries and interrupted downloads have no valid marker.
+            // Pass them to ImageService so it can safely resume or restart the transfer.
+            if (!isLocal && File.Exists(isoPath) && !cachedComplete)
+            {
+                try { if (File.Exists(completionMarker)) File.Delete(completionMarker); } catch { }
+            }
 
             if (isLocal)
             {
                 Log($"Using local ISO: {isoPath} ({FmtBytes(new FileInfo(isoPath).Length)})");
                 Progress.Value = 100;
             }
-            else if (File.Exists(isoPath))
+            else if (cachedComplete)
             {
-                Log($"ISO already cached ({FmtBytes(new FileInfo(isoPath).Length)}), skipping download.");
+                Log($"ISO already cached and marked complete ({FmtBytes(new FileInfo(isoPath).Length)}), skipping download.");
                 Progress.Value = 100;
             }
             else
             {
-                Log($"Downloading from {img.DownloadUrl}");
+                Log(File.Exists(isoPath)
+                    ? $"Resuming incomplete download from {FmtBytes(new FileInfo(isoPath).Length)}: {img.DownloadUrl}"
+                    : $"Downloading from {img.DownloadUrl}");
                 StatusText.Text = $"Downloading {img.Name}...";
                 var prog = new Progress<ImageService.DownloadProgress>(p =>
                 {
@@ -833,6 +855,13 @@ public partial class MainWindow : Window
                     StatusText.Text = p.Percent >= 0 ? $"Downloading: {p.Percent:F1}%" : "Downloading...";
                 });
                 await _img.DownloadAsync(img.DownloadUrl, isoPath, prog, ct);
+                try
+                {
+                    string marker = markerPrefix +
+                        new FileInfo(isoPath).Length.ToString(CultureInfo.InvariantCulture);
+                    File.WriteAllText(completionMarker, marker);
+                }
+                catch (Exception ex) { Log("Could not save download completion marker: " + ex.Message); }
                 Log("Download finished.");
             }
 
@@ -851,6 +880,7 @@ public partial class MainWindow : Window
                     StatusText.Text = "Hash mismatch! File is corrupted.";
                     Log("ERROR: hash mismatch, deleting corrupted file.");
                     try { File.Delete(isoPath); } catch { }
+                    try { File.Delete(completionMarker); } catch { }
                     return;
                 }
                 Log("Hash OK.");
