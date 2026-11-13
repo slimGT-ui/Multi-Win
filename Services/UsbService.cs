@@ -122,7 +122,7 @@ public class UsbService
                 throw new IOException(
                     $"This image needs {Fmt(needUsbFat)}, larger than the safe FAT32 partition limit ({Fmt(fat32SafePartitionBytes)}). Use NTFS mode instead.");
 
-            int fat32PartitionSizeMb = target.SizeBytes > 32L * 1024 * 1024 * 1024
+            int fat32PartitionSizeMb = target.SizeBytes > fat32SafePartitionBytes
                 ? 30000
                 : 0;
             if (fat32PartitionSizeMb > 0)
