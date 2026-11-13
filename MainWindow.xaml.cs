@@ -781,7 +781,6 @@ public partial class MainWindow : Window
         _cts = new CancellationTokenSource();
         CancellationToken ct = _cts.Token;
         CancelBtn.Visibility = Visibility.Visible;
-        bool downloadedNow = false;
         string isoPath = "";
         try
         {
@@ -821,7 +820,6 @@ public partial class MainWindow : Window
                     StatusText.Text = p.Percent >= 0 ? $"Downloading: {p.Percent:F1}%" : "Downloading...";
                 });
                 await _img.DownloadAsync(img.DownloadUrl, isoPath, prog, ct);
-                downloadedNow = true;
                 Log("Download finished.");
             }
 
@@ -975,11 +973,8 @@ public partial class MainWindow : Window
             Progress.IsIndeterminate = false;
             StatusText.Text = "Cancelled";
             Log("Cancelled by user.");
-            if (downloadedNow)
-            {
-                try { if (File.Exists(isoPath)) File.Delete(isoPath); } catch { }
-                Log("Partial download deleted.");
-            }
+            // Keep a complete cached ISO; ImageService already leaves partial downloads
+            // available for a later Range-resume attempt.
         }
         catch (Exception ex)
         {
