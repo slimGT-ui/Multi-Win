@@ -13,7 +13,7 @@ public class ImageService
     {
         var h = new HttpClientHandler
         {
-            AutomaticDecompression = DecompressionMethods.All,
+            AutomaticDecompression = DecompressionMethods.None,
             AllowAutoRedirect = true,
             MaxAutomaticRedirections = 10,
             UseCookies = true,
@@ -39,6 +39,15 @@ public class ImageService
 
     private static void ApplyMicrosoftHeaders(HttpRequestMessage req) =>
         req.Headers.Referrer = new Uri("https://www.microsoft.com/software-download/windows11");
+
+    private static void EnsureNoHttpsDowngrade(HttpResponseMessage resp, string requestedUrl)
+    {
+        if (Uri.TryCreate(requestedUrl, UriKind.Absolute, out var requested) &&
+            requested.Scheme == Uri.UriSchemeHttps &&
+            resp.RequestMessage?.RequestUri?.Scheme != Uri.UriSchemeHttps)
+            throw new IOException("Download redirected from HTTPS to a non-HTTPS URL; refusing.");
+    }
+
 
     private static void ThrowIfHtmlPage(HttpResponseMessage resp, string url)
     {
@@ -79,6 +88,7 @@ public class ImageService
         {
             probe.Headers.Range = new RangeHeaderValue(0, 0);
             using var pr = await http.SendAsync(probe, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            EnsureNoHttpsDowngrade(pr, direct);
             string media = pr.Content.Headers.ContentType?.MediaType ?? "";
             if ((pr.StatusCode == HttpStatusCode.OK || pr.StatusCode == HttpStatusCode.PartialContent) &&
                 !media.StartsWith("text/html", StringComparison.OrdinalIgnoreCase))
@@ -87,6 +97,7 @@ public class ImageService
         string pageUrl = $"https://drive.google.com/uc?export=download&id={Uri.EscapeDataString(id)}";
         using var pageReq = new HttpRequestMessage(HttpMethod.Get, pageUrl);
         using var pageResp = await http.SendAsync(pageReq, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        EnsureNoHttpsDowngrade(pageResp, pageUrl);
         pageResp.EnsureSuccessStatusCode();
         string html = await pageResp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         var m = Regex.Match(html, @"(/uc\?export=download[^""'\s<>]*confirm[^""'\s<>]*)");
@@ -145,20 +156,49 @@ public class ImageService
             req.Headers.Range = new RangeHeaderValue(existing, null);
 
         using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        EnsureNoHttpsDowngrade(resp, url);
         if (existing > 0 && resp.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
         {
-
-            existing = 0;
+            // The partial file is not a valid resumable prefix (or is already complete).
+            // Start a clean request instead of appending an ambiguous response.
             await DownloadOnceFreshAsync(url, destPath, progress, ct).ConfigureAwait(false);
             return;
         }
+
         if (existing > 0 && resp.StatusCode != HttpStatusCode.PartialContent)
         {
-
-            existing = 0;
+            // A server that ignores Range may return the entire file with 200 OK.
+            // Never append it, and never treat an error response as a successful download.
+            resp.EnsureSuccessStatusCode();
+            ThrowIfHtmlPage(resp, url);
+            resp.Dispose();
+            await DownloadOnceFreshAsync(url, destPath, progress, ct).ConfigureAwait(false);
+            return;
         }
-        else resp.EnsureSuccessStatusCode();
+
+        resp.EnsureSuccessStatusCode();
         ThrowIfHtmlPage(resp, url);
+
+        if (existing > 0)
+        {
+            var range = resp.Content.Headers.ContentRange;
+            long? responseLength = resp.Content.Headers.ContentLength;
+            bool invalidRange = range?.Unit != "bytes" || range.From != existing ||
+                !range.To.HasValue || range.To.Value < existing ||
+                (range.Length.HasValue && (range.Length.Value <= existing ||
+                    range.To.Value != range.Length.Value - 1)) ||
+                (responseLength.HasValue && range.To.HasValue &&
+                    responseLength.Value != range.To.Value - range.From!.Value + 1);
+            if (invalidRange)
+            {
+                try { File.Delete(destPath); } catch { }
+                throw new IOException("Server returned an invalid or incomplete Content-Range for the resumed download.");
+            }
+        }
+        else if (resp.StatusCode == HttpStatusCode.PartialContent)
+        {
+            throw new IOException("Server returned a partial response without a requested byte range.");
+        }
 
         var total = (resp.Content.Headers.ContentLength ?? -1L);
         long fullTotal = existing + (total >= 0 ? total : 0);
@@ -188,7 +228,12 @@ public class ImageService
         }
         sw.Stop();
         await dst.FlushAsync(ct).ConfigureAwait(false);
-        var finalBps = sw.Elapsed.TotalSeconds > 0 ? (read - existing) / sw.Elapsed.TotalSeconds : 0;
+        long received = read - existing;
+        if (read == 0)
+            throw new IOException("The server returned an empty ISO download.");
+        if (total >= 0 && received != total)
+            throw new IOException($"Download was truncated: received {received} of {total} bytes.");
+        var finalBps = sw.Elapsed.TotalSeconds > 0 ? received / sw.Elapsed.TotalSeconds : 0;
         progress?.Report(new DownloadProgress(read, fullTotal > 0 ? fullTotal : read, finalBps, 100));
     }
 
@@ -201,7 +246,10 @@ public class ImageService
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         if (IsMicrosoftHost(url)) ApplyMicrosoftHeaders(req);
         using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        EnsureNoHttpsDowngrade(resp, url);
         resp.EnsureSuccessStatusCode();
+        if (resp.StatusCode != HttpStatusCode.OK)
+            throw new IOException($"Server returned unexpected HTTP status {(int)resp.StatusCode} for a fresh download.");
         ThrowIfHtmlPage(resp, url);
         var total = resp.Content.Headers.ContentLength ?? -1L;
         await using var src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
@@ -217,6 +265,10 @@ public class ImageService
             var pct = total > 0 ? (double)read / total * 100 : -1;
             progress?.Report(new DownloadProgress(read, total, read / Math.Max(sw.Elapsed.TotalSeconds, 0.001), pct));
         }
+        if (read == 0)
+            throw new IOException("The server returned an empty ISO download.");
+        if (total >= 0 && read != total)
+            throw new IOException($"Download was truncated: received {read} of {total} bytes.");
         progress?.Report(new DownloadProgress(read, total > 0 ? total : read, read / Math.Max(sw.Elapsed.TotalSeconds, 0.001), 100));
     }
 

@@ -17,6 +17,12 @@ public static class IsoDetect
 
 
 
+        if (s.Contains("linux") && s.Contains("server"))
+            return lin(Prettify(stem), "linux", 2048, "Linux");
+        if (s.Contains("server") &&
+            (s.Contains("windows") || s.StartsWith("server") || s.Contains("winserver")))
+            return win("Windows Server");
+
         if (s.Contains("26h2") || s.Contains("25h2") || s.Contains("24h2") || s.Contains("23h2") ||
             s.Contains("26100") || s.Contains("26200") || s.Contains("26300"))
             return win("Windows 11");
@@ -53,7 +59,6 @@ public static class IsoDetect
             if (s.Contains("7")) return win("Windows 7");
             if (s.Contains("vista")) return win("Windows Vista");
             if (s.Contains("xp")) return win("Windows XP");
-            if (s.Contains("server")) return win("Windows Server");
             return win("Windows");
         }
         var m = Regex.Match(s, @"(^|[-_. ])win(dows)?[-_. ]?(\d+\.?\d*|xp|vista)?");
@@ -64,7 +69,8 @@ public static class IsoDetect
             {
                 "11" => win("Windows 11"),
                 "10" => win("Windows 10"),
-                "8.1" or "81" or "8" => win("Windows 8.1"),
+                "8.1" or "81" => win("Windows 8.1"),
+                "8" => win("Windows 8"),
                 "7" => win("Windows 7"),
                 "xp" => win("Windows XP"),
                 "vista" => win("Windows Vista"),
@@ -91,6 +97,10 @@ public static class IsoDetect
     public static DetectedOs RefineWindowsName(string mountedRoot, DetectedOs current)
     {
         if (current.OsFamily != "Windows") return current;
+        // Windows Server shares build numbers with desktop Windows releases.
+        // Keep an explicit Server filename classification instead of relabeling it.
+        if (current.Name.Contains("Server", StringComparison.OrdinalIgnoreCase))
+            return current with { FromContents = true };
         try
         {
             string setup = mountedRoot + @"\setup.exe";

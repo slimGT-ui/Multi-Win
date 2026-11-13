@@ -1,6 +1,7 @@
 ﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
@@ -359,7 +360,20 @@ public partial class MainWindow : Window
         var opts = new List<string>();
         if (!IsHddMode && VerifyCheck.IsChecked == true) opts.Add("verify");
         if (!IsHddMode && BadBlocksCheck.IsChecked == true) opts.Add("filesystem check");
-        if (BypassCheck.IsChecked == true) opts.Add("TPM bypass");
+        if (img?.OsFamily == "Windows")
+        {
+            if (BypassCheck.IsChecked == true) opts.Add("TPM / Secure Boot / RAM / CPU bypass");
+            if (BypassNroCheck.IsChecked == true) opts.Add("skip Microsoft account requirement");
+            string localUser = UserNameBox.Text.Trim();
+            if (localUser.Length > 0 &&
+                !localUser.Equals("Administrator", StringComparison.OrdinalIgnoreCase) &&
+                !localUser.Equals("NONE", StringComparison.OrdinalIgnoreCase))
+                opts.Add($"local admin '{localUser}' (blank password, one-time autologon)");
+            if (PrivacyCheck.IsChecked == true) opts.Add("skip privacy questions");
+            if (BitLockerCheck.IsChecked == true) opts.Add("prevent automatic BitLocker encryption");
+            if (AppraiserCheck.IsChecked == true) opts.Add("empty appraiserres.dll (in-place upgrade tweak)");
+            if (LocaleCheck.IsChecked == true) opts.Add("use this PC's timezone");
+        }
         string targetLine;
         string fsLine = "";
         if (IsHddMode)
@@ -746,6 +760,12 @@ public partial class MainWindow : Window
         { StatusText.Text = "Pick a USB drive"; return; }
 
         bool ntfsMode = FsBox.SelectedIndex == 1;
+        if (!hddMode && img0.OsFamily == "Windows" && ntfsMode && PartBox.SelectedIndex == 1)
+        {
+            StatusText.Text = "GPT + NTFS is not generally UEFI-bootable without a FAT32 EFI loader.";
+            Log("Choose FAT32 for GPT/UEFI boot, or choose MBR + NTFS for BIOS / NTFS-capable UEFI.");
+            return;
+        }
         string label = UsbService.SanitizeLabel(LabelBox.Text);
         MessageBoxResult confirm;
         if (hddMode)
@@ -781,7 +801,6 @@ public partial class MainWindow : Window
         _cts = new CancellationTokenSource();
         CancellationToken ct = _cts.Token;
         CancelBtn.Visibility = Visibility.Visible;
-        bool downloadedNow = false;
         string isoPath = "";
         try
         {
@@ -795,20 +814,41 @@ public partial class MainWindow : Window
             Directory.CreateDirectory(dir);
             bool isLocal = !string.IsNullOrEmpty(img.LocalPath);
             isoPath = isLocal ? img.LocalPath! : Path.Combine(dir, Path.GetFileName(img.Id) + ".iso");
+            string completionMarker = isoPath + ".complete";
+            string markerPrefix = $"{img.DownloadUrl}\n{img.SizeBytes}\n{img.Sha256}\n";
+            bool cachedComplete = false;
+            if (!isLocal && File.Exists(isoPath) && File.Exists(completionMarker))
+            {
+                try
+                {
+                    string expectedMarker = markerPrefix +
+                        new FileInfo(isoPath).Length.ToString(CultureInfo.InvariantCulture);
+                    cachedComplete = File.ReadAllText(completionMarker) == expectedMarker;
+                }
+                catch { }
+            }
+            // Old cache entries and interrupted downloads have no valid marker.
+            // Pass them to ImageService so it can safely resume or restart the transfer.
+            if (!isLocal && File.Exists(isoPath) && !cachedComplete)
+            {
+                try { if (File.Exists(completionMarker)) File.Delete(completionMarker); } catch { }
+            }
 
             if (isLocal)
             {
                 Log($"Using local ISO: {isoPath} ({FmtBytes(new FileInfo(isoPath).Length)})");
                 Progress.Value = 100;
             }
-            else if (File.Exists(isoPath))
+            else if (cachedComplete)
             {
-                Log($"ISO already cached ({FmtBytes(new FileInfo(isoPath).Length)}), skipping download.");
+                Log($"ISO already cached and marked complete ({FmtBytes(new FileInfo(isoPath).Length)}), skipping download.");
                 Progress.Value = 100;
             }
             else
             {
-                Log($"Downloading from {img.DownloadUrl}");
+                Log(File.Exists(isoPath)
+                    ? $"Resuming incomplete download from {FmtBytes(new FileInfo(isoPath).Length)}: {img.DownloadUrl}"
+                    : $"Downloading from {img.DownloadUrl}");
                 StatusText.Text = $"Downloading {img.Name}...";
                 var prog = new Progress<ImageService.DownloadProgress>(p =>
                 {
@@ -821,7 +861,13 @@ public partial class MainWindow : Window
                     StatusText.Text = p.Percent >= 0 ? $"Downloading: {p.Percent:F1}%" : "Downloading...";
                 });
                 await _img.DownloadAsync(img.DownloadUrl, isoPath, prog, ct);
-                downloadedNow = true;
+                try
+                {
+                    string marker = markerPrefix +
+                        new FileInfo(isoPath).Length.ToString(CultureInfo.InvariantCulture);
+                    File.WriteAllText(completionMarker, marker);
+                }
+                catch (Exception ex) { Log("Could not save download completion marker: " + ex.Message); }
                 Log("Download finished.");
             }
 
@@ -838,11 +884,21 @@ public partial class MainWindow : Window
                 if (!hash.Equals(img.Sha256, StringComparison.OrdinalIgnoreCase))
                 {
                     StatusText.Text = "Hash mismatch! File is corrupted.";
-                    Log("ERROR: hash mismatch, deleting corrupted file.");
-                    try { File.Delete(isoPath); } catch { }
+                    Log(isLocal
+                        ? "ERROR: local ISO hash mismatch. The original file was left untouched."
+                        : "ERROR: downloaded ISO hash mismatch. Deleting the corrupted cache entry.");
+                    if (!isLocal)
+                    {
+                        try { File.Delete(isoPath); } catch { }
+                        try { File.Delete(completionMarker); } catch { }
+                    }
                     return;
                 }
                 Log("Hash OK.");
+            }
+            else if (!isLocal)
+            {
+                Log("WARNING: this catalog entry has no SHA256 checksum; the downloaded ISO cannot be independently authenticated.");
             }
 
             string family = img.OsFamily;
@@ -914,6 +970,13 @@ public partial class MainWindow : Window
                 return;
             }
 
+            if (family == "Windows" && ntfsMode && PartBox.SelectedIndex == 1)
+            {
+                StatusText.Text = "GPT + NTFS is not generally UEFI-bootable.";
+                Log("Choose FAT32 for GPT/UEFI boot, or MBR + NTFS for BIOS / NTFS-capable UEFI. No USB formatting was performed.");
+                return;
+            }
+
             StatusText.Text = "Flashing USB...";
             SpeedText.Text = "";
             Progress.IsIndeterminate = true;
@@ -958,7 +1021,11 @@ public partial class MainWindow : Window
             {
                 Log($"Formatting {usb!.DeviceId} ({usb!.Model}, {usb!.PartitionStyle}, " +
                     (fsMode == UsbService.FileSystemMode.NtfsDirect ? "NTFS direct" : "FAT32 split") + ")...");
-                await Task.Run(() => _usb.WriteImage(isoPath, usb!, arch, custom, flashLog, ct, fsMode, verify, label));
+                var partStyle = PartBox.SelectedIndex == 1
+                    ? UsbService.PartitionStyle.Gpt
+                    : UsbService.PartitionStyle.Mbr;
+                await Task.Run(() => _usb.WriteImage(isoPath, usb!, arch, custom, flashLog, ct,
+                    fsMode, verify, label, partStyle));
             }
             Progress.IsIndeterminate = false;
             Progress.Value = 100;
@@ -971,11 +1038,8 @@ public partial class MainWindow : Window
             Progress.IsIndeterminate = false;
             StatusText.Text = "Cancelled";
             Log("Cancelled by user.");
-            if (downloadedNow)
-            {
-                try { if (File.Exists(isoPath)) File.Delete(isoPath); } catch { }
-                Log("Partial download deleted.");
-            }
+            // Keep a complete cached ISO; ImageService already leaves partial downloads
+            // available for a later Range-resume attempt.
         }
         catch (Exception ex)
         {

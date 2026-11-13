@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using WinMultiInstaller.Models;
 
@@ -21,12 +22,22 @@ public class CatalogService
     {
         var devPath = Path.GetFullPath(Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Data", "catalog.json"));
-        var file = File.Exists(_path) ? _path : devPath;
-        if (!File.Exists(file)) return new();
-        var json = File.ReadAllText(file);
-        var items = JsonSerializer.Deserialize<List<WindowsImage>>(json,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
-        return items.Where(IsSane).ToList();
+        foreach (string file in new[] { _path, _path + ".bak", devPath }.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!File.Exists(file)) continue;
+            try
+            {
+                var json = File.ReadAllText(file);
+                var items = JsonSerializer.Deserialize<List<WindowsImage>>(json,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (items != null) return items.Where(IsSane).ToList();
+            }
+            catch
+            {
+                // Try the backup or development catalog instead of aborting app startup.
+            }
+        }
+        return new();
     }
 
     public async Task<int> UpdateFromUrlAsync(string url, CancellationToken ct = default)
@@ -38,11 +49,22 @@ public class CatalogService
         using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         using var resp = await http.GetAsync(url, System.Net.Http.HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         resp.EnsureSuccessStatusCode();
+        if (resp.RequestMessage?.RequestUri?.Scheme != Uri.UriSchemeHttps)
+            throw new IOException("Catalog download redirected to a non-HTTPS URL; refusing.");
         if ((resp.Content.Headers.ContentLength ?? 0) > MaxCatalogBytes)
             throw new IOException("Catalog file too large, refusing.");
-        string json = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-        if (json.Length > MaxCatalogBytes)
-            throw new IOException("Catalog file too large, refusing.");
+
+        await using var input = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while ((read = await input.ReadAsync(chunk.AsMemory(0, chunk.Length), ct).ConfigureAwait(false)) > 0)
+        {
+            if (buffer.Length + read > MaxCatalogBytes)
+                throw new IOException("Catalog file too large, refusing.");
+            await buffer.WriteAsync(chunk.AsMemory(0, read), ct).ConfigureAwait(false);
+        }
+        string json = Encoding.UTF8.GetString(buffer.ToArray());
         var items = JsonSerializer.Deserialize<List<WindowsImage>>(json,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
             ?? throw new IOException("Catalog is empty or invalid.");
@@ -56,9 +78,19 @@ public class CatalogService
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        if (File.Exists(_path))
-            File.Copy(_path, _path + ".bak", overwrite: true);
-        await File.WriteAllTextAsync(_path, json, ct).ConfigureAwait(false);
+        string tempPath = _path + ".tmp";
+        try
+        {
+            await File.WriteAllTextAsync(tempPath, json, ct).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+            if (File.Exists(_path))
+                File.Copy(_path, _path + ".bak", overwrite: true);
+            File.Move(tempPath, _path, overwrite: true);
+        }
+        finally
+        {
+            try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+        }
         return items.Count;
     }
 
@@ -67,11 +99,9 @@ public class CatalogService
         if (string.IsNullOrWhiteSpace(i.Id) || string.IsNullOrWhiteSpace(i.Name)) return false;
         if (!System.Text.RegularExpressions.Regex.IsMatch(i.Id, @"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")) return false;
         if (i.SizeBytes < 0 || i.MinRamMb < 0) return false;
-        if (!string.IsNullOrWhiteSpace(i.DownloadUrl))
-        {
-            if (!Uri.TryCreate(i.DownloadUrl, UriKind.Absolute, out var u)) return false;
-            if (u.Scheme != Uri.UriSchemeHttp && u.Scheme != Uri.UriSchemeHttps) return false;
-        }
+        if (string.IsNullOrWhiteSpace(i.DownloadUrl)) return false;
+        if (!Uri.TryCreate(i.DownloadUrl, UriKind.Absolute, out var u)) return false;
+        if (u.Scheme != Uri.UriSchemeHttps) return false;
         if (!string.IsNullOrWhiteSpace(i.Sha256))
         {
             string h = i.Sha256.Trim();

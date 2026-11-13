@@ -18,62 +18,77 @@ public static class UsbCheckService
         if (!Directory.Exists(root)) throw new IOException($"Drive {usbLetter} not found.");
         passes = Math.Clamp(passes, 1, 4);
 
-        long free = 0;
-        try { free = new DriveInfo(root).AvailableFreeSpace; } catch { }
-        long testSize = free > 1024L * 1024 * 1024 ? 256L * 1024 * 1024 : 64L * 1024 * 1024;
-        string testFile = Path.Combine(root, ".multiwin-badblocks.tmp");
+        long free;
+        try { free = new DriveInfo(root).AvailableFreeSpace; }
+        catch (Exception ex) { throw new IOException($"Could not read free space on {usbLetter}.", ex); }
+        if (free < 64L * 1024 * 1024)
+            throw new IOException($"Not enough free space on {usbLetter} for the bad-block test (at least 64 MB required).");
+
+        long testSize = free > 1024L * 1024 * 1024
+            ? 256L * 1024 * 1024
+            : Math.Min(64L * 1024 * 1024, free / 2);
+        string testFile = Path.Combine(root, ".multiwin-badblocks-" + Guid.NewGuid().ToString("N") + ".tmp");
 
         var rnd = new Random(0x5EED);
         var buf = new byte[BufSize];
         var read = new byte[BufSize];
 
-        for (int pass = 1; pass <= passes; pass++)
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            log($"Bad-blocks pass {pass}/{passes}: writing {Fmt(testSize)}...");
-            rnd.NextBytes(buf);
-            byte marker = (byte)(0xA5 + pass);
-            for (int i = 0; i < buf.Length; i += 4096) buf[i] = marker;
-
-            using (var fs = new FileStream(testFile, FileMode.Create, FileAccess.Write,
-                FileShare.None, BufSize, FileOptions.WriteThrough))
+            for (int pass = 1; pass <= passes; pass++)
             {
-                long written = 0;
-                while (written < testSize)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    int n = (int)Math.Min(buf.Length, testSize - written);
-                    fs.Write(buf, 0, n);
-                    written += n;
-                    progress?.Invoke((pass - 1 + (double)written / testSize) / passes * 50);
-                }
-                fs.Flush(true);
-            }
+                ct.ThrowIfCancellationRequested();
+                log($"Bad-blocks pass {pass}/{passes}: writing {Fmt(testSize)}...");
+                rnd.NextBytes(buf);
+                byte marker = (byte)(0xA5 + pass);
+                for (int i = 0; i < buf.Length; i += 4096) buf[i] = marker;
 
-            log($"Bad-blocks pass {pass}/{passes}: verifying...");
-            using (var fs = new FileStream(testFile, FileMode.Open, FileAccess.Read,
-                FileShare.Read, BufSize, FileOptions.SequentialScan))
-            {
-                long done = 0;
-                int n;
-                while ((n = fs.Read(read, 0, read.Length)) > 0)
+                using (var fs = new FileStream(testFile, FileMode.CreateNew, FileAccess.Write,
+                    FileShare.None, BufSize, FileOptions.WriteThrough))
                 {
-                    ct.ThrowIfCancellationRequested();
-                    for (int i = 0; i < n; i++)
+                    long written = 0;
+                    while (written < testSize)
                     {
-                        if (read[i] != buf[(done + i) % BufSize])
-                            throw new IOException(
-                                $"Bad block detected (pass {pass}, offset {Fmt(done + i)}). Drive is unreliable.");
+                        ct.ThrowIfCancellationRequested();
+                        int n = (int)Math.Min(buf.Length, testSize - written);
+                        fs.Write(buf, 0, n);
+                        written += n;
+                        progress?.Invoke((pass - 1 + (double)written / testSize) / passes * 50);
                     }
-                    done += n;
-                    progress?.Invoke(((pass - 1) / (double)passes * 50) + 25 + (double)done / testSize / passes * 25);
+                    fs.Flush(true);
                 }
-            }
-        }
 
-        try { File.Delete(testFile); } catch { }
-        log("Bad-blocks check passed, no errors.");
-        progress?.Invoke(100);
+                log($"Bad-blocks pass {pass}/{passes}: verifying...");
+                using (var fs = new FileStream(testFile, FileMode.Open, FileAccess.Read,
+                    FileShare.Read, BufSize, FileOptions.SequentialScan))
+                {
+                    long done = 0;
+                    int n;
+                    while ((n = fs.Read(read, 0, read.Length)) > 0)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        for (int i = 0; i < n; i++)
+                        {
+                            if (read[i] != buf[(done + i) % BufSize])
+                                throw new IOException(
+                                    $"Bad block detected (pass {pass}, offset {Fmt(done + i)}). Drive is unreliable.");
+                        }
+                        done += n;
+                        progress?.Invoke(50 + ((pass - 1 + (double)done / testSize) / passes) * 50);
+                    }
+                    if (done != testSize)
+                        throw new IOException($"Bad-block test file was truncated ({Fmt(done)} of {Fmt(testSize)} read).");
+                }
+                File.Delete(testFile);
+            }
+
+            log("Bad-blocks check passed, no errors.");
+            progress?.Invoke(100);
+        }
+        finally
+        {
+            try { if (File.Exists(testFile)) File.Delete(testFile); } catch { }
+        }
     }
 
     private static readonly string[] CriticalFiles =
@@ -106,6 +121,18 @@ public static class UsbCheckService
             string d = Path.Combine(dstRoot, rel);
             if (!File.Exists(d))
                 throw new IOException($"Verify failed: missing on USB: {rel}");
+
+            // EmptyAppraiser intentionally replaces this file, preserving the original as .bak.
+            if (rel.Equals(@"sources\appraiserres.dll", StringComparison.OrdinalIgnoreCase) &&
+                new FileInfo(d).Length == 0 && File.Exists(d + ".bak"))
+            {
+                if (!HashFile(s).Equals(HashFile(d + ".bak"), StringComparison.OrdinalIgnoreCase))
+                    throw new IOException("Verify failed: appraiserres.dll backup does not match the source ISO.");
+                hashed++;
+                ok++;
+                continue;
+            }
+
             long ls = new FileInfo(s).Length, ld = new FileInfo(d).Length;
             if (ls != ld)
                 throw new IOException($"Verify failed: size mismatch {rel} ({Fmt(ls)} vs {Fmt(ld)}).");
@@ -156,7 +183,7 @@ public static class UsbCheckService
         string root = usbLetter.TrimEnd('\\') + "\\";
         if (!Directory.Exists(root)) throw new IOException($"Drive {usbLetter} not found.");
         const long size = 128L * 1024 * 1024;
-        string f = Path.Combine(root, ".multiwin-bench.tmp");
+        string f = Path.Combine(root, ".multiwin-bench-" + Guid.NewGuid().ToString("N") + ".tmp");
         var buf = new byte[BufSize];
         new Random(1234).NextBytes(buf);
         try
@@ -171,13 +198,21 @@ public static class UsbCheckService
             }
             double write = size / 1024.0 / 1024 / sw.Elapsed.TotalSeconds;
             sw.Restart();
+            long readBytes = 0;
             using (var fs = new FileStream(f, FileMode.Open, FileAccess.Read,
                 FileShare.Read, BufSize, FileOptions.SequentialScan))
             {
                 var tmp = new byte[BufSize];
-                while (fs.Read(tmp, 0, tmp.Length) > 0) { ct.ThrowIfCancellationRequested(); }
+                int n;
+                while ((n = fs.Read(tmp, 0, tmp.Length)) > 0)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    readBytes += n;
+                }
             }
-            double read = size / 1024.0 / 1024 / sw.Elapsed.TotalSeconds;
+            if (readBytes != size)
+                throw new IOException($"Benchmark file was truncated ({Fmt(readBytes)} of {Fmt(size)} read).");
+            double read = readBytes / 1024.0 / 1024 / sw.Elapsed.TotalSeconds;
             log($"Benchmark {usbLetter}: write {write:F1} MB/s, read {read:F1} MB/s ({Fmt(size)} sample).");
             return (write, read);
         }

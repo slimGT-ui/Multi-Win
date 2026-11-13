@@ -57,10 +57,12 @@ public class HardwareService
                 bool activated = IsTruthy(o["IsActivated_InitialValue"]);
                 string spec = o["SpecVersion"]?.ToString() ?? "";
 
-                bool is2x = spec.Split(',')[0].Trim().StartsWith("2", StringComparison.Ordinal);
+                // Windows 11 requires TPM 2.0. Do not accept TPM 1.2 merely
+                // because it is enabled and activated.
+                string version = spec.Split(',')[0].Trim();
+                bool is2x = version.Equals("2", StringComparison.Ordinal) ||
+                    version.StartsWith("2.", StringComparison.Ordinal);
                 if (enabled && activated && is2x) return true;
-
-                if (enabled && activated) return true;
             }
         }
         catch { }

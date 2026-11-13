@@ -1,0 +1,32 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+      - "fix/**"
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore
+        run: dotnet restore MultiWin.csproj
+      - name: Build
+        run: dotnet build MultiWin.csproj --configuration Release --no-restore
