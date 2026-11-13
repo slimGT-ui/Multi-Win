@@ -359,7 +359,17 @@ public partial class MainWindow : Window
         var opts = new List<string>();
         if (!IsHddMode && VerifyCheck.IsChecked == true) opts.Add("verify");
         if (!IsHddMode && BadBlocksCheck.IsChecked == true) opts.Add("filesystem check");
-        if (BypassCheck.IsChecked == true) opts.Add("TPM bypass");
+        if (BypassCheck.IsChecked == true) opts.Add("TPM / Secure Boot / RAM / CPU bypass");
+        if (BypassNroCheck.IsChecked == true) opts.Add("skip Microsoft account requirement");
+        string localUser = UserNameBox.Text.Trim();
+        if (localUser.Length > 0 &&
+            !localUser.Equals("Administrator", StringComparison.OrdinalIgnoreCase) &&
+            !localUser.Equals("NONE", StringComparison.OrdinalIgnoreCase))
+            opts.Add($"local admin '{localUser}' (blank password, one-time autologon)");
+        if (PrivacyCheck.IsChecked == true) opts.Add("skip privacy questions");
+        if (BitLockerCheck.IsChecked == true) opts.Add("prevent automatic BitLocker encryption");
+        if (AppraiserCheck.IsChecked == true) opts.Add("empty appraiserres.dll (in-place upgrade tweak)");
+        if (LocaleCheck.IsChecked == true) opts.Add("use this PC's timezone");
         string targetLine;
         string fsLine = "";
         if (IsHddMode)
