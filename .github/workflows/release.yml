@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag to publish"
+        required: true
+        default: "v0.6.0-beta.1"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag_name || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and publish Windows release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore MultiWin.csproj
+
+      - name: Publish self-contained Windows x64 app
+        run: >
+          dotnet publish MultiWin.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --no-restore
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          --output publish
+
+      - name: Package ZIP
+        shell: pwsh
+        run: |
+          $archive = "Multi-Win-v0.6.0-beta.1-win-x64.zip"
+          Compress-Archive -Path "publish\*" -DestinationPath $archive -CompressionLevel Optimal
+          if (-not (Test-Path $archive)) {
+            throw "Release archive was not created."
+          }
+          if (-not (Test-Path "publish\Multi-Win.exe")) {
+            throw "Multi-Win.exe is missing from the publish output."
+          }
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: Multi-Win ${{ github.event.inputs.tag_name || github.ref_name }}
+          prerelease: true
+          generate_release_notes: true
+          body: |
+            **Multi-Win beta test build for Windows x64.**
+
+            This is a pre-release intended for testing. USB writing, UEFI boot, and HDD Setup still need validation on real hardware.
+
+            **Download:** `Multi-Win-v0.6.0-beta.1-win-x64.zip`
+
+            Extract the ZIP and run `Multi-Win.exe`. The package is self-contained and does not require a separate .NET installation.
+          files: Multi-Win-v0.6.0-beta.1-win-x64.zip
