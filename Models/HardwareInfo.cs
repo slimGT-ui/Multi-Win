@@ -15,7 +15,7 @@ public record HardwareInfo(
         if (img.NeedsTpm && !HasTpm)
             return "No TPM 2.0 — Windows 11 may install with bypass, but support and updates are not guaranteed.";
         if (img.NeedsUefi && !HasUefi)
-            return "No UEFI — Win11 will install only in Legacy mode with bypass.";
+            return "No UEFI detected — Windows 11 requires UEFI for a supported setup; bypass does not guarantee Legacy BIOS installation.";
         return null;
     }
 }
