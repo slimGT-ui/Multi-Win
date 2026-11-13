@@ -18,10 +18,11 @@ public class HddInstallService
 {
     public const string SetupDirName = "MULTIWIN-SETUP";
     private const string BcdFileName = "multiwin-bcd.txt";
+    private const string RamdiskFileName = "multiwin-ramdisk.txt";
 
     public record HddTarget(string Root, string SetupDir, long FreeBytes);
 
-    public record HddState(bool Installed, string? SetupDir, string? BcdId);
+    public record HddState(bool Installed, string? SetupDir, string? BcdId, string? RamdiskId);
 
     public HddState GetState()
     {
@@ -38,12 +39,21 @@ public class HddInstallService
                 string guid = File.ReadAllText(bf).Trim();
                 if (!Regex.IsMatch(guid, @"^\{[0-9a-fA-F-]{36}\}$")) continue;
 
+                string? ramdiskId = null;
+                string ramdiskFile = Path.Combine(dir, RamdiskFileName);
+                if (File.Exists(ramdiskFile))
+                {
+                    string candidate = File.ReadAllText(ramdiskFile).Trim();
+                    if (Regex.IsMatch(candidate, @"^\{[0-9a-fA-F-]{36}\}$"))
+                        ramdiskId = candidate;
+                }
+
                 // Do not treat an arbitrary folder with this name as an installation.
-                return new HddState(true, dir, guid);
+                return new HddState(true, dir, guid, ramdiskId);
             }
             catch { }
         }
-        return new HddState(false, null, null);
+        return new HddState(false, null, null, null);
     }
 
     public List<HddTarget> GetTargets(long needBytes)
@@ -87,6 +97,7 @@ public class HddInstallService
             throw new IOException($"{setupDir} already exists — remove the previous HDD setup first.");
 
         string? createdBcdId = null;
+        string? createdRamdiskId = null;
         bool setupDirCreated = false;
         bool bootSequenceSet = false;
 
@@ -117,18 +128,25 @@ public class HddInstallService
             string guid = BcdCopyDefault("Multi-Win Setup (auto-removable)", L, ct);
             createdBcdId = guid;
             File.WriteAllText(Path.Combine(setupDir, BcdFileName), guid);
+
+            // Use a dedicated ramdisk-options object so existing Windows Recovery
+            // entries that reference the global {ramdiskoptions} object are untouched.
+            string ramdiskId = BcdCreateRamdiskOptions(L, ct);
+            createdRamdiskId = ramdiskId;
+            File.WriteAllText(Path.Combine(setupDir, RamdiskFileName), ramdiskId);
             string wimPath = $"[{driveRoot}]\\{SetupDirName}\\sources\\boot.wim";
             string sdiPath = $"\\{SetupDirName}\\sources\\boot.sdi";
-            BcdSetRamdiskOptions(driveRoot, sdiPath, L, ct);
-            Bcd($"set {guid} device ramdisk={wimPath},{{ramdiskoptions}}", L, ct);
-            Bcd($"set {guid} osdevice ramdisk={wimPath},{{ramdiskoptions}}", L, ct);
+            Bcd($"set {ramdiskId} ramdisksdidevice partition={driveRoot}", L, ct);
+            Bcd($"set {ramdiskId} ramdisksdipath {sdiPath}", L, ct);
+            Bcd($"set {guid} device ramdisk={wimPath},{ramdiskId}", L, ct);
+            Bcd($"set {guid} osdevice ramdisk={wimPath},{ramdiskId}", L, ct);
             Bcd($"set {guid} path \\windows\\system32\\{(uefi ? "winload.efi" : "winload.exe")}", L, ct);
             Bcd($"set {guid} winpe yes", L, ct);
             Bcd($"set {guid} detecthal yes", L, ct);
             Bcd($"bootsequence {guid}", L, ct);
             bootSequenceSet = true;
 
-            WriteCleanupScript(setupDir, guid);
+            WriteCleanupScript(setupDir, guid, ramdiskId);
             L("Done. Reboot to start Windows Setup. Default boot entry unchanged — " +
               "the PC boots into Setup ONCE, then back to your system.");
             L($"After Setup finishes, delete {setupDir} and run RemoveHddSetup (or remove-hdd-setup.cmd).");
@@ -142,6 +160,7 @@ public class HddInstallService
                 catch (Exception ex) { L("Rollback warning: could not clear one-shot boot sequence: " + ex.Message); }
             }
             bool bootEntryRemoved = createdBcdId == null;
+            bool ramdiskEntryRemoved = createdRamdiskId == null;
             if (createdBcdId != null)
             {
                 try
@@ -153,14 +172,25 @@ public class HddInstallService
                 catch (Exception ex)
                 {
                     L("Rollback warning: could not remove temporary boot entry: " + ex.Message);
-                    L("Keeping HDD setup files in place to avoid leaving a boot entry that points to missing files.");
                 }
             }
-            if (setupDirCreated && bootEntryRemoved)
+            if (bootEntryRemoved && createdRamdiskId != null)
+            {
+                try
+                {
+                    EnsureOwnedRamdiskEntry(createdRamdiskId, L);
+                    Bcd($"delete {createdRamdiskId} /f", L, CancellationToken.None);
+                    ramdiskEntryRemoved = true;
+                }
+                catch (Exception ex) { L("Rollback warning: could not remove temporary ramdisk options: " + ex.Message); }
+            }
+            if (setupDirCreated && bootEntryRemoved && ramdiskEntryRemoved)
             {
                 try { Directory.Delete(setupDir, recursive: true); }
                 catch (Exception ex) { L("Rollback warning: could not remove setup files: " + ex.Message); }
             }
+            else if (setupDirCreated)
+                L("Keeping HDD setup files in place because BCD rollback was incomplete.");
             try { UsbService.DismountIsoImage(isoPath); } catch { }
             throw;
         }
@@ -179,7 +209,10 @@ public class HddInstallService
         if (st.BcdId != null)
         {
             EnsureOwnedSetupEntry(st.BcdId, L);
+            if (st.RamdiskId != null) EnsureOwnedRamdiskEntry(st.RamdiskId, L);
             Bcd($"delete {st.BcdId} /f", L, CancellationToken.None);
+            if (st.RamdiskId != null)
+                Bcd($"delete {st.RamdiskId} /f", L, CancellationToken.None);
         }
         for (int i = 0; i < 3; i++)
         {
@@ -218,17 +251,36 @@ public class HddInstallService
         L("Verified the stored BCD entry belongs to Multi-Win.");
     }
 
-    private static void WriteCleanupScript(string setupDir, string guid)
+    private static void EnsureOwnedRamdiskEntry(string guid, Action<string> L)
+    {
+        var lines = new List<string>();
+        int rc = Run("bcdedit", $"/enum {guid}", lines.Add, CancellationToken.None);
+        if (rc != 0)
+            throw new IOException("Could not inspect the stored ramdisk options; refusing to delete it.");
+        string details = string.Join("\n", lines);
+        if (!details.Contains("Multi-Win Ramdisk", StringComparison.OrdinalIgnoreCase) ||
+            !details.Contains("ramdisksdidevice", StringComparison.OrdinalIgnoreCase) ||
+            !details.Contains("ramdisksdipath", StringComparison.OrdinalIgnoreCase))
+            throw new IOException("Stored ramdisk identifier does not match a Multi-Win ramdisk object.");
+        L("Verified the stored ramdisk options belong to Multi-Win.");
+    }
+
+    private static void WriteCleanupScript(string setupDir, string guid, string ramdiskGuid)
     {
         string cmd = Path.Combine(setupDir, "remove-hdd-setup.cmd");
         File.WriteAllText(cmd,
             "@echo off\r\n" +
             "REM Removes the Multi-Win one-shot Setup entry and this folder. Run as admin.\r\n" +
             $"bcdedit /enum {guid} >nul 2>&1\r\n" +
-            "if errorlevel 1 goto RemoveFiles\r\n" +
+            "if errorlevel 1 goto CheckRamdisk\r\n" +
             $"bcdedit /enum {guid} | findstr /i /c:\"Multi-Win Setup (auto-removable)\" >nul || exit /b 1\r\n" +
             $"bcdedit /enum {guid} | findstr /i /c:\"MULTIWIN-SETUP\" >nul || exit /b 1\r\n" +
             $"bcdedit /delete {guid} /f || exit /b 1\r\n" +
+            ":CheckRamdisk\r\n" +
+            $"bcdedit /enum {ramdiskGuid} >nul 2>&1\r\n" +
+            "if errorlevel 1 goto RemoveFiles\r\n" +
+            $"bcdedit /enum {ramdiskGuid} | findstr /i /c:\"Multi-Win Ramdisk\" >nul || exit /b 1\r\n" +
+            $"bcdedit /delete {ramdiskGuid} /f || exit /b 1\r\n" +
             ":RemoveFiles\r\n" +
             "schtasks /delete /tn \"MultiWinCleanup\" /f >nul 2>&1\r\n" +
             "cd /d \"%~dp0..\"\r\n" +
@@ -256,12 +308,25 @@ public class HddInstallService
         return m.Value;
     }
 
-    private static void BcdSetRamdiskOptions(string driveRoot, string sdiPath, Action<string> L, CancellationToken ct)
+    private static string BcdCreateRamdiskOptions(Action<string> L, CancellationToken ct)
     {
-
-        try { Bcd("create {ramdiskoptions} /d \"Multi-Win ramdisk\"", L, ct); } catch { }
-        Bcd($"set {{ramdiskoptions}} ramdisksdidevice partition={driveRoot}", L, ct);
-        Bcd($"set {{ramdiskoptions}} ramdisksdipath {sdiPath}", L, ct);
+        var lines = new List<string>();
+        int rc = Run("bcdedit", "/create /d \"Multi-Win Ramdisk\" /device",
+            l => { lock (lines) lines.Add(l); L("  " + l.Trim()); }, ct);
+        string all = string.Join("\n", lines);
+        var match = Regex.Match(all, @"\{[0-9a-fA-F-]{36}\}");
+        if (rc != 0 || !match.Success)
+        {
+            if (match.Success)
+            {
+                try { Bcd($"delete {match.Value} /f", L, CancellationToken.None); }
+                catch (Exception ex) { L("Rollback warning: could not remove partially-created ramdisk options: " + ex.Message); }
+            }
+            throw new IOException("Could not create a dedicated ramdisk options object:\n" +
+                string.Join("\n", lines.TakeLast(6)));
+        }
+        L($"Dedicated ramdisk options {match.Value} created.");
+        return match.Value;
     }
 
     private static void Bcd(string args, Action<string> L, CancellationToken ct)
