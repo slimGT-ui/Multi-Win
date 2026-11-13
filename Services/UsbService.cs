@@ -504,6 +504,9 @@ public class UsbService
 
     private static void AssertUsbDisk(int disk, UsbDrive target)
     {
+        if (target.SizeBytes == 0)
+            throw new IOException("Could not determine the selected USB drive capacity. Refresh the drive list before flashing.");
+
         int parsed = ParseDiskNumber(target.DeviceId);
         if (parsed != disk)
             throw new IOException($"Disk number mismatch ({disk} vs {parsed}), aborting.");
