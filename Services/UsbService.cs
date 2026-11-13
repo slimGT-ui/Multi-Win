@@ -115,8 +115,20 @@ public class UsbService
             if (plan == CopyPlan.ConvertEsd)
                 RequireTempSpace(isoLetter, L);
 
+            const long fat32SafePartitionBytes = 30000L * 1024 * 1024;
+            if (needUsbFat > fat32SafePartitionBytes)
+                throw new IOException(
+                    $"This image needs {Fmt(needUsbFat)}, larger than the safe FAT32 partition limit ({Fmt(fat32SafePartitionBytes)}). Use NTFS mode instead.");
+
+            int fat32PartitionSizeMb = target.SizeBytes > 32L * 1024 * 1024 * 1024
+                ? 30000
+                : 0;
+            if (fat32PartitionSizeMb > 0)
+                L("Large USB detected: creating a 30,000 MB FAT32 partition (Windows format limit); remaining space will stay unused.");
+
             L($"Preparing USB (diskpart: clean, {partStyle}, FAT32, active)...");
-            string usbLetter = PrepareUsb(disk, Emit, ct, "fat32", volumeLabel ?? "MULTIWIN", partStyle);
+            string usbLetter = PrepareUsb(disk, Emit, ct, "fat32", volumeLabel ?? "MULTIWIN",
+                partStyle, fat32PartitionSizeMb);
             L($"USB ready as {usbLetter}");
 
             ct.ThrowIfCancellationRequested();
@@ -369,17 +381,20 @@ public class UsbService
         catch { }
     }
 
-    private static string PrepareUsb(int disk, Action<string> emit, CancellationToken ct, string fs = "fat32", string label = "MULTIWIN", PartitionStyle style = PartitionStyle.Mbr)
+    private static string PrepareUsb(int disk, Action<string> emit, CancellationToken ct,
+        string fs = "fat32", string label = "MULTIWIN",
+        PartitionStyle style = PartitionStyle.Mbr, int partitionSizeMb = 0)
     {
         string fsLower = (fs ?? "fat32").ToLowerInvariant() == "ntfs" ? "ntfs" : "fat32";
         string vol = SanitizeLabel(label);
         string script = TempScriptPath("multiwin-diskpart");
         string convert = style == PartitionStyle.Gpt ? "convert gpt" : "convert mbr";
-
-
+        string partition = partitionSizeMb > 0
+            ? $"create partition primary size={partitionSizeMb}\n"
+            : "create partition primary\n";
         string active = style == PartitionStyle.Gpt ? "" : "active\n";
         File.WriteAllText(script,
-            $"select disk {disk}\nclean\n{convert}\ncreate partition primary\n" +
+            $"select disk {disk}\nclean\n{convert}\n{partition}" +
             $"format fs={fsLower} quick label=\"{vol}\"\n{active}assign\nexit\n");
         try
         {
