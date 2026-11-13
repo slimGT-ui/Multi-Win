@@ -147,18 +147,32 @@ public class ImageService
         using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         if (existing > 0 && resp.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
         {
-
-            existing = 0;
+            // The partial file is not a valid resumable prefix (or is already complete).
+            // Start a clean request instead of appending an ambiguous response.
             await DownloadOnceFreshAsync(url, destPath, progress, ct).ConfigureAwait(false);
             return;
         }
+
         if (existing > 0 && resp.StatusCode != HttpStatusCode.PartialContent)
         {
-
-            existing = 0;
+            // A server that ignores Range may return the entire file with 200 OK.
+            // Never append it, and never treat an error response as a successful download.
+            resp.EnsureSuccessStatusCode();
+            ThrowIfHtmlPage(resp, url);
+            await resp.DisposeAsync().ConfigureAwait(false);
+            await DownloadOnceFreshAsync(url, destPath, progress, ct).ConfigureAwait(false);
+            return;
         }
-        else resp.EnsureSuccessStatusCode();
+
+        resp.EnsureSuccessStatusCode();
         ThrowIfHtmlPage(resp, url);
+
+        if (existing > 0)
+        {
+            var range = resp.Content.Headers.ContentRange;
+            if (range?.From != existing || range.Unit != "bytes")
+                throw new IOException("Server returned an invalid Content-Range for the resumed download.");
+        }
 
         var total = (resp.Content.Headers.ContentLength ?? -1L);
         long fullTotal = existing + (total >= 0 ? total : 0);
