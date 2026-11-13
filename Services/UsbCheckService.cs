@@ -121,6 +121,18 @@ public static class UsbCheckService
             string d = Path.Combine(dstRoot, rel);
             if (!File.Exists(d))
                 throw new IOException($"Verify failed: missing on USB: {rel}");
+
+            // EmptyAppraiser intentionally replaces this file, preserving the original as .bak.
+            if (rel.Equals(@"sources\appraiserres.dll", StringComparison.OrdinalIgnoreCase) &&
+                new FileInfo(d).Length == 0 && File.Exists(d + ".bak"))
+            {
+                if (!HashFile(s).Equals(HashFile(d + ".bak"), StringComparison.OrdinalIgnoreCase))
+                    throw new IOException("Verify failed: appraiserres.dll backup does not match the source ISO.");
+                hashed++;
+                ok++;
+                continue;
+            }
+
             long ls = new FileInfo(s).Length, ld = new FileInfo(d).Length;
             if (ls != ld)
                 throw new IOException($"Verify failed: size mismatch {rel} ({Fmt(ls)} vs {Fmt(ld)}).");
@@ -171,7 +183,7 @@ public static class UsbCheckService
         string root = usbLetter.TrimEnd('\\') + "\\";
         if (!Directory.Exists(root)) throw new IOException($"Drive {usbLetter} not found.");
         const long size = 128L * 1024 * 1024;
-        string f = Path.Combine(root, ".multiwin-bench.tmp");
+        string f = Path.Combine(root, ".multiwin-bench-" + Guid.NewGuid().ToString("N") + ".tmp");
         var buf = new byte[BufSize];
         new Random(1234).NextBytes(buf);
         try
