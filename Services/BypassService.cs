@@ -106,8 +106,9 @@ public static class BypassService
     private static string SanitizeUser(string n)
     {
         if (string.IsNullOrWhiteSpace(n)) return "";
-        if (n.Trim().Equals("Administrator", StringComparison.OrdinalIgnoreCase)) return "";
-        foreach (char bad in new[] { '\\', '/', '[', ']', '"', ':', ';', '|', '=', ',', '+', '*', '?', '<', '>' })
+        if (n.Trim().Equals("Administrator", StringComparison.OrdinalIgnoreCase) ||
+            n.Trim().Equals("NONE", StringComparison.OrdinalIgnoreCase)) return "";
+        foreach (char bad in new[] { '\\', '/', '[', ']', '"', ':', ';', '|', '=', ',', '+', '*', '?', '<', '>', '%', '@', (char)96 })
             n = n.Replace(bad, '_');
         n = n.Trim();
         return n.Length > 20 ? n[..20] : n;
