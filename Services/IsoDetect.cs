@@ -46,6 +46,7 @@ public static class IsoDetect
 
         if (s.Contains("windows"))
         {
+            if (s.Contains("server")) return win("Windows Server");
             if (s.Contains("11")) return win("Windows 11");
             if (s.Contains("10")) return win("Windows 10");
             if (s.Contains("8.1") || s.Contains("8_1") || s.Contains("81")) return win("Windows 8.1");
