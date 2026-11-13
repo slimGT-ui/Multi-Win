@@ -258,7 +258,8 @@ public class HddInstallService
         string details = string.Join("\n", lines);
         if (!details.Contains("Multi-Win Ramdisk", StringComparison.OrdinalIgnoreCase) ||
             !details.Contains("ramdisksdidevice", StringComparison.OrdinalIgnoreCase) ||
-            !details.Contains("ramdisksdipath", StringComparison.OrdinalIgnoreCase))
+            !details.Contains("ramdisksdipath", StringComparison.OrdinalIgnoreCase) ||
+            !details.Contains(SetupDirName, StringComparison.OrdinalIgnoreCase))
             throw new IOException("Stored ramdisk identifier does not match a Multi-Win ramdisk object.");
         L("Verified the stored ramdisk options belong to Multi-Win.");
     }
@@ -278,6 +279,7 @@ public class HddInstallService
             $"bcdedit /enum {ramdiskGuid} >nul 2>&1\r\n" +
             "if errorlevel 1 goto RemoveFiles\r\n" +
             $"bcdedit /enum {ramdiskGuid} | findstr /i /c:\"Multi-Win Ramdisk\" >nul || exit /b 1\r\n" +
+            $"bcdedit /enum {ramdiskGuid} | findstr /i /c:\"MULTIWIN-SETUP\" >nul || exit /b 1\r\n" +
             $"bcdedit /delete {ramdiskGuid} /f || exit /b 1\r\n" +
             ":RemoveFiles\r\n" +
             "schtasks /delete /tn \"MultiWinCleanup\" /f >nul 2>&1\r\n" +
