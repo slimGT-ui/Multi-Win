@@ -74,7 +74,7 @@ public static class UsbCheckService
                                     $"Bad block detected (pass {pass}, offset {Fmt(done + i)}). Drive is unreliable.");
                         }
                         done += n;
-                        progress?.Invoke(((pass - 1) / (double)passes * 50) + 25 + (double)done / testSize / passes * 25);
+                        progress?.Invoke(50 + ((pass - 1 + (double)done / testSize) / passes) * 50);
                     }
                     if (done != testSize)
                         throw new IOException($"Bad-block test file was truncated ({Fmt(done)} of {Fmt(testSize)} read).");
@@ -198,13 +198,21 @@ public static class UsbCheckService
             }
             double write = size / 1024.0 / 1024 / sw.Elapsed.TotalSeconds;
             sw.Restart();
+            long readBytes = 0;
             using (var fs = new FileStream(f, FileMode.Open, FileAccess.Read,
                 FileShare.Read, BufSize, FileOptions.SequentialScan))
             {
                 var tmp = new byte[BufSize];
-                while (fs.Read(tmp, 0, tmp.Length) > 0) { ct.ThrowIfCancellationRequested(); }
+                int n;
+                while ((n = fs.Read(tmp, 0, tmp.Length)) > 0)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    readBytes += n;
+                }
             }
-            double read = size / 1024.0 / 1024 / sw.Elapsed.TotalSeconds;
+            if (readBytes != size)
+                throw new IOException($"Benchmark file was truncated ({Fmt(readBytes)} of {Fmt(size)} read).");
+            double read = readBytes / 1024.0 / 1024 / sw.Elapsed.TotalSeconds;
             log($"Benchmark {usbLetter}: write {write:F1} MB/s, read {read:F1} MB/s ({Fmt(size)} sample).");
             return (write, read);
         }
