@@ -11,6 +11,6 @@ public record WindowsCustom(
 )
 {
     public bool HasTweaks() => BypassTpm || BypassNro || !string.IsNullOrWhiteSpace(Username)
-        || SkipPrivacy || PreventBitLocker || HostLocale;
+        || SkipPrivacy || PreventBitLocker || EmptyAppraiser || HostLocale;
 }
 
