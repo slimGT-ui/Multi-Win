@@ -443,18 +443,27 @@ public class UsbService
     private static string MountIso(string isoPath, Action<string> emit, CancellationToken ct)
     {
         string? found = null;
-
-
-
-        string q = ToPsSingleQuoted(Path.GetFullPath(isoPath));
-        string b64 = EncodePowerShell(
-            $"Mount-DiskImage -ImagePath {q} | Out-Null; " +
-            $"(Get-DiskImage -ImagePath {q} | Get-Volume).DriveLetter");
-        using var p = StartProcess("powershell",
-            "-NoProfile -NonInteractive -EncodedCommand " + b64, out var readOut, out var readErr,
-            l => { var t = l.Trim(); if (t.Length == 1 && char.IsLetter(t[0])) found = t.ToUpperInvariant() + ":"; else emit(l); });
-        WaitForExitCancellable(p, readOut, readErr, ct);
-        return found ?? throw new IOException("Could not mount ISO / get its drive letter.");
+        try
+        {
+            string q = ToPsSingleQuoted(Path.GetFullPath(isoPath));
+            string b64 = EncodePowerShell(
+                $"Mount-DiskImage -ImagePath {q} | Out-Null; " +
+                $"(Get-DiskImage -ImagePath {q} | Get-Volume).DriveLetter");
+            using var p = StartProcess("powershell",
+                "-NoProfile -NonInteractive -EncodedCommand " + b64, out var readOut, out var readErr,
+                l => { var t = l.Trim(); if (t.Length == 1 && char.IsLetter(t[0])) found = t.ToUpperInvariant() + ":"; else emit(l); });
+            int rc = WaitForExitCancellable(p, readOut, readErr, ct);
+            if (rc != 0)
+                throw new IOException($"PowerShell failed to mount the ISO (exit code {rc}).");
+            return found ?? throw new IOException("Could not mount ISO / get its drive letter.");
+        }
+        catch
+        {
+            // Mount-DiskImage may have succeeded even if querying its volume failed.
+            // Do not leave a mounted image behind on this failure path.
+            DismountIso(isoPath, emit);
+            throw;
+        }
     }
 
     private static void DismountIso(string isoPath, Action<string> L)
