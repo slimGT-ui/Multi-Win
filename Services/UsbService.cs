@@ -73,7 +73,7 @@ public class UsbService
         }
 
         int disk = ParseDiskNumber(target.DeviceId);
-        AssertUsbDisk(disk, target.DeviceId);
+        AssertUsbDisk(disk, target);
         long isoLen = new FileInfo(isoPath).Length;
 
         L("Mounting ISO...");
@@ -500,25 +500,32 @@ public class UsbService
         return int.Parse(m.Groups[1].Value);
     }
 
-    private static void AssertUsbDisk(int disk, string deviceId)
+    private static void AssertUsbDisk(int disk, UsbDrive target)
     {
-
-
-
-        int parsed = ParseDiskNumber(deviceId);
+        int parsed = ParseDiskNumber(target.DeviceId);
         if (parsed != disk)
             throw new IOException($"Disk number mismatch ({disk} vs {parsed}), aborting.");
+
         using var s = new ManagementObjectSearcher(
-            $"SELECT InterfaceType, Model, Index FROM Win32_DiskDrive WHERE Index={disk}");
+            $"SELECT InterfaceType, Model, Size, Index FROM Win32_DiskDrive WHERE Index={disk}");
         foreach (ManagementObject o in s.Get())
         {
             int idx;
             try { idx = Convert.ToInt32(o["Index"]); } catch { continue; }
             if (idx != disk) continue;
+
             string iface = o["InterfaceType"]?.ToString() ?? "";
+            string model = (o["Model"]?.ToString() ?? "").Trim();
             if (!iface.Contains("USB", StringComparison.OrdinalIgnoreCase))
                 throw new IOException(
-                    $"Refusing: disk {disk} ({o["Model"]}) is '{iface}', not USB. Aborting.");
+                    $"Refusing: disk {disk} ({model}) is '{iface}', not USB. Aborting.");
+            if (!model.Equals(target.Model.Trim(), StringComparison.OrdinalIgnoreCase))
+                throw new IOException("The selected USB device changed since the drive list was loaded. Refresh the drive list and try again.");
+
+            ulong.TryParse(o["Size"]?.ToString(), out ulong currentSize);
+            if (target.SizeBytes > 0 && currentSize != target.SizeBytes)
+                throw new IOException("The selected USB drive size changed since the drive list was loaded. Refresh the drive list and try again.");
+
             return;
         }
         throw new IOException($"Disk {disk} not found, aborting.");
