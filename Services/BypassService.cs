@@ -126,7 +126,16 @@ public static class BypassService
         }
         if (File.Exists(target))
             throw new IOException($"An answer file already exists at '{target}'. Multi-Win refuses to overwrite custom unattended setup settings.");
-        File.WriteAllText(target, sb.ToString(), new UTF8Encoding(false));
+        string tempAnswer = target + ".multiwin.tmp";
+        try
+        {
+            File.WriteAllText(tempAnswer, sb.ToString(), new UTF8Encoding(false));
+            File.Move(tempAnswer, target);
+        }
+        finally
+        {
+            try { if (File.Exists(tempAnswer)) File.Delete(tempAnswer); } catch { }
+        }
 
         var on = new List<string>();
         if (c.BypassTpm) on.Add("TPM/SB/RAM/CPU bypass");
