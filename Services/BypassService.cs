@@ -10,6 +10,20 @@ public static class BypassService
         "xmlns:wcm=\"http://schemas.microsoft.com/WMIConfig/2002/State\" " +
         "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"";
 
+    public static void ValidateTarget(string root, WindowsCustom c)
+    {
+        if (!c.HasTweaks()) return;
+        string user = SanitizeUser(c.Username);
+        bool hasUnattend = c.BypassTpm || c.BypassNro || user.Length > 0 ||
+            c.SkipPrivacy || c.PreventBitLocker || c.HostLocale;
+        if (!hasUnattend) return;
+
+        string rootAnswer = Path.Combine(root, "autounattend.xml");
+        string oemAnswer = Path.Combine(root, "sources", "$OEM$", "$", "Panther", "unattend.xml");
+        if (File.Exists(rootAnswer) || File.Exists(oemAnswer))
+            throw new IOException("The ISO already contains an unattended answer file. Multi-Win refuses to overwrite or conflict with custom setup settings.");
+    }
+
     public static void Inject(string usbRoot, string arch, WindowsCustom c, Action<string> L)
     {
         if (!c.HasTweaks()) return;
