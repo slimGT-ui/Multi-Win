@@ -41,11 +41,8 @@ public static class BypassService
             spec.Add("reg add HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\OOBE /v BypassNRO /t REG_DWORD /d 1 /f");
         if (c.PreventBitLocker)
             spec.Add("reg add HKLM\\SYSTEM\\CurrentControlSet\\Control\\BitLocker /v PreventDeviceEncryption /t REG_DWORD /d 1 /f");
-        if (user.Length > 0)
-        {
-            spec.Add($"net user \"{user}\" /logonpasswordchg:yes");
-            spec.Add("net accounts /maxpwage:unlimited");
-        }
+        // The local account is created in the later oobeSystem pass.
+        // Do not run "net user" in specialize, before that account exists.
         if (spec.Count > 0)
         {
             sb.AppendLine("  <settings pass=\"specialize\">");
@@ -72,9 +69,10 @@ public static class BypassService
             }
             if (user.Length > 0)
             {
-                const string blank = "UABhAHMAcwB3AG8AcgBkAA==";
-                sb.AppendLine($"      <UserAccounts><LocalAccounts><LocalAccount wcm:action=\"add\"><Password><Value>{blank}</Value><PlainText>false</PlainText></Password><DisplayName>{userXml}</DisplayName><Group>Administrators</Group><Name>{userXml}</Name></LocalAccount></LocalAccounts></UserAccounts>");
-                sb.AppendLine($"      <AutoLogon><Password><Value>{blank}</Value><PlainText>false</PlainText></Password><Enabled>true</Enabled><LogonCount>1</LogonCount><Username>{userXml}</Username></AutoLogon>");
+                // The UI promises a blank password. Use an actual empty value;
+                // the previous base64 string decoded to the literal password "Password".
+                sb.AppendLine($"      <UserAccounts><LocalAccounts><LocalAccount wcm:action=\"add\"><Password><Value></Value><PlainText>true</PlainText></Password><DisplayName>{userXml}</DisplayName><Group>Administrators</Group><Name>{userXml}</Name></LocalAccount></LocalAccounts></UserAccounts>");
+                sb.AppendLine($"      <AutoLogon><Password><Value></Value><PlainText>true</PlainText></Password><Enabled>true</Enabled><LogonCount>1</LogonCount><Username>{userXml}</Username></AutoLogon>");
             }
             sb.AppendLine("    </component>");
             sb.AppendLine("  </settings>");
