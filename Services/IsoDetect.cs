@@ -64,7 +64,8 @@ public static class IsoDetect
             {
                 "11" => win("Windows 11"),
                 "10" => win("Windows 10"),
-                "8.1" or "81" or "8" => win("Windows 8.1"),
+                "8.1" or "81" => win("Windows 8.1"),
+                "8" => win("Windows 8"),
                 "7" => win("Windows 7"),
                 "xp" => win("Windows XP"),
                 "vista" => win("Windows Vista"),
