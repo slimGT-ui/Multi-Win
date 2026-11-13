@@ -244,7 +244,14 @@ public class HddInstallService
         string all = string.Join("\n", lines);
         var m = Regex.Match(all, @"\{[0-9a-fA-F-]{36}\}");
         if (rc != 0 || !m.Success)
+        {
+            if (m.Success)
+            {
+                try { Bcd($"delete {m.Value} /f", L, CancellationToken.None); }
+                catch (Exception ex) { L("Rollback warning: could not remove partially-created BCD entry: " + ex.Message); }
+            }
             throw new IOException("bcdedit /copy failed:\n" + string.Join("\n", lines.TakeLast(6)));
+        }
         L($"Boot entry {m.Value} created.");
         return m.Value;
     }
