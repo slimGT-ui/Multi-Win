@@ -39,7 +39,8 @@ public static class CacheService
             try { File.Delete(p); n++; }
             catch (Exception ex) { log?.Invoke($"Could not delete {Path.GetFileName(p)}: {ex.Message}"); }
         }
-        foreach (var f in Directory.GetFiles(CacheDir, "*.conv.wim"))
+        foreach (var f in Directory.GetFiles(CacheDir, "*.iso.complete")
+            .Concat(Directory.GetFiles(CacheDir, "*.conv.wim")))
         {
             try { File.Delete(f); } catch { }
         }
