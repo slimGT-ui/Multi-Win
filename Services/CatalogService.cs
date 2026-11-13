@@ -99,11 +99,9 @@ public class CatalogService
         if (string.IsNullOrWhiteSpace(i.Id) || string.IsNullOrWhiteSpace(i.Name)) return false;
         if (!System.Text.RegularExpressions.Regex.IsMatch(i.Id, @"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")) return false;
         if (i.SizeBytes < 0 || i.MinRamMb < 0) return false;
-        if (!string.IsNullOrWhiteSpace(i.DownloadUrl))
-        {
-            if (!Uri.TryCreate(i.DownloadUrl, UriKind.Absolute, out var u)) return false;
-            if (u.Scheme != Uri.UriSchemeHttps) return false;
-        }
+        if (string.IsNullOrWhiteSpace(i.DownloadUrl)) return false;
+        if (!Uri.TryCreate(i.DownloadUrl, UriKind.Absolute, out var u)) return false;
+        if (u.Scheme != Uri.UriSchemeHttps) return false;
         if (!string.IsNullOrWhiteSpace(i.Sha256))
         {
             string h = i.Sha256.Trim();
