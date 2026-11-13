@@ -133,6 +133,7 @@ public class UsbService
             string usbLetter = PrepareUsb(disk, Emit, ct, "fat32", volumeLabel ?? "MULTIWIN",
                 partStyle, fat32PartitionSizeMb);
             L($"USB ready as {usbLetter}");
+            AssertUsbDisk(disk, target);
 
             ct.ThrowIfCancellationRequested();
             CopyFiles(isoLetter, usbLetter, plan,
