@@ -342,35 +342,6 @@ public class UsbService
     {
         if (custom.HasTweaks())
             BypassService.Inject(usbLetter + "\\", arch, custom, L);
-
-        if (custom.EmptyAppraiser)
-        {
-            string ap = usbLetter + @"\sources\appraiserres.dll";
-            if (File.Exists(ap))
-            {
-                string bak = ap + ".bak";
-                string temp = ap + ".multiwin.tmp";
-                if (File.Exists(bak))
-                    throw new IOException("Cannot apply appraiser tweak: appraiserres.dll.bak already exists; refusing to overwrite it.");
-                try
-                {
-                    File.WriteAllBytes(temp, Array.Empty<byte>());
-                    File.Move(ap, bak);
-                    try { File.Move(temp, ap); }
-                    catch
-                    {
-                        if (!File.Exists(ap) && File.Exists(bak)) File.Move(bak, ap);
-                        throw;
-                    }
-                }
-                finally
-                {
-                    try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-                }
-                L("appraiserres.dll emptied (original preserved as .bak).");
-            }
-            else L("appraiserres.dll not found, skipping.");
-        }
     }
 
     private static void CheckUefiNtfsAsset(Action<string> L)
