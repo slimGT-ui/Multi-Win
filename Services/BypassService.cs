@@ -37,6 +37,7 @@ public static class BypassService
             return;
         }
 
+        ValidateTarget(usbRoot, c);
         string warch = arch == "x86" ? "x86" : arch == "arm64" ? "arm64" : "amd64";
         string userXml = System.Security.SecurityElement.Escape(user) ?? "";
         string tzXml;
