@@ -155,7 +155,7 @@ public class UsbService
     {
         void L(string m) => log?.Report(m);
         int disk = ParseDiskNumber(target.DeviceId);
-        AssertUsbDisk(disk, target.DeviceId);
+        AssertUsbDisk(disk, target);
         long total = new FileInfo(isoPath).Length;
         if (target.SizeBytes > 0 && (ulong)total > target.SizeBytes)
             throw new IOException(
