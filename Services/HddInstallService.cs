@@ -214,7 +214,7 @@ public class HddInstallService
         File.WriteAllText(cmd,
             "@echo off\r\n" +
             "REM Removes the Multi-Win one-shot Setup entry and this folder. Run as admin.\r\n" +
-            $"bcdedit /enum {guid} | findstr /i /c:\"Multi-Win Setup (auto-removable)\" >nul && bcdedit /enum {guid} | findstr /i /c:\"MULTIWIN-SETUP\" >nul && bcdedit /delete {guid} /f\r\n" +
+            $"bcdedit /enum {guid} | findstr /i /c:\"Multi-Win Setup (auto-removable)\" >nul && bcdedit /enum {guid} | findstr /i /c:\"MULTIWIN-SETUP\" >nul && bcdedit /delete {guid} /f || exit /b 1\r\n" +
             "schtasks /delete /tn \"MultiWinCleanup\" /f >nul 2>&1\r\n" +
             "cd /d \"%~dp0..\"\r\n" +
             $"rmdir /s /q \"{setupDir}\"\r\n",
