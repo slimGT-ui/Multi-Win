@@ -251,6 +251,7 @@ public class HddInstallService
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
+        ct.ThrowIfCancellationRequested();
         using var p = new Process { StartInfo = psi, EnableRaisingEvents = true };
         p.Start();
         var ro = Task.Run(() => Pump(p.StandardOutput, onLine));
@@ -260,7 +261,8 @@ public class HddInstallService
             while (!p.WaitForExit(250))
                 ct.ThrowIfCancellationRequested();
             Task.WaitAll(ro, re);
-            ct.ThrowIfCancellationRequested();
+            // A child that has exited completed its operation; do not turn a
+            // late cancellation into an ambiguous partial-success exception.
             return p.ExitCode;
         }
         catch
