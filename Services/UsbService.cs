@@ -331,10 +331,25 @@ public class UsbService
             if (File.Exists(ap))
             {
                 string bak = ap + ".bak";
-                try { if (File.Exists(bak)) File.Delete(bak); } catch { }
-                File.Move(ap, bak);
-                File.WriteAllBytes(ap, Array.Empty<byte>());
-                L("appraiserres.dll emptied (helps in-place upgrade without TPM).");
+                string temp = ap + ".multiwin.tmp";
+                if (File.Exists(bak))
+                    throw new IOException("Cannot apply appraiser tweak: appraiserres.dll.bak already exists; refusing to overwrite it.");
+                try
+                {
+                    File.WriteAllBytes(temp, Array.Empty<byte>());
+                    File.Move(ap, bak);
+                    try { File.Move(temp, ap); }
+                    catch
+                    {
+                        if (!File.Exists(ap) && File.Exists(bak)) File.Move(bak, ap);
+                        throw;
+                    }
+                }
+                finally
+                {
+                    try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+                }
+                L("appraiserres.dll emptied (original preserved as .bak).");
             }
             else L("appraiserres.dll not found, skipping.");
         }
