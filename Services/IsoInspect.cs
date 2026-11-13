@@ -22,7 +22,8 @@ public static class IsoInspect
     {
         bool Exists(string p) => Directory.Exists(root + p) || File.Exists(root + p);
 
-        if (Exists(@"\sources\install.wim") || Exists(@"\sources\install.esd"))
+        if (Exists(@"\sources\install.wim") || Exists(@"\sources\install.esd") ||
+            Exists(@"\sources\install.swm"))
         {
             var baseOs = fallback.OsFamily == "Windows"
                 ? fallback with { FromContents = true }
