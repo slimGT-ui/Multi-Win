@@ -760,6 +760,12 @@ public partial class MainWindow : Window
         { StatusText.Text = "Pick a USB drive"; return; }
 
         bool ntfsMode = FsBox.SelectedIndex == 1;
+        if (!hddMode && img0.OsFamily == "Windows" && ntfsMode && PartBox.SelectedIndex == 1)
+        {
+            StatusText.Text = "GPT + NTFS is not generally UEFI-bootable without a FAT32 EFI loader.";
+            Log("Choose FAT32 for GPT/UEFI boot, or choose MBR + NTFS for BIOS / NTFS-capable UEFI.");
+            return;
+        }
         string label = UsbService.SanitizeLabel(LabelBox.Text);
         MessageBoxResult confirm;
         if (hddMode)
