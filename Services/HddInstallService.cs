@@ -301,8 +301,22 @@ public class HddInstallService
     private static string BcdCopyDefault(string description, Action<string> L, CancellationToken ct)
     {
         var lines = new List<string>();
-        int rc = Run("bcdedit", $"/copy {{default}} /d \"{description}\"",
-            l => { lock (lines) lines.Add(l); L("  " + l.Trim()); }, ct);
+        int rc;
+        try
+        {
+            rc = Run("bcdedit", $"/copy {{default}} /d \"{description}\"",
+                l => { lock (lines) lines.Add(l); L("  " + l.Trim()); }, ct);
+        }
+        catch
+        {
+            var partial = Regex.Match(string.Join("\n", lines), @"\{[0-9a-fA-F-]{36}\}");
+            if (partial.Success)
+            {
+                try { Bcd($"delete {partial.Value} /f", L, CancellationToken.None); }
+                catch (Exception ex) { L("Rollback warning: could not remove partially-created BCD entry: " + ex.Message); }
+            }
+            throw;
+        }
         string all = string.Join("\n", lines);
         var m = Regex.Match(all, @"\{[0-9a-fA-F-]{36}\}");
         if (rc != 0 || !m.Success)
@@ -321,8 +335,22 @@ public class HddInstallService
     private static string BcdCreateRamdiskOptions(Action<string> L, CancellationToken ct)
     {
         var lines = new List<string>();
-        int rc = Run("bcdedit", "/create /d \"Multi-Win Ramdisk\" /device",
-            l => { lock (lines) lines.Add(l); L("  " + l.Trim()); }, ct);
+        int rc;
+        try
+        {
+            rc = Run("bcdedit", "/create /d \"Multi-Win Ramdisk\" /device",
+                l => { lock (lines) lines.Add(l); L("  " + l.Trim()); }, ct);
+        }
+        catch
+        {
+            var partial = Regex.Match(string.Join("\n", lines), @"\{[0-9a-fA-F-]{36}\}");
+            if (partial.Success)
+            {
+                try { Bcd($"delete {partial.Value} /f", L, CancellationToken.None); }
+                catch (Exception ex) { L("Rollback warning: could not remove partially-created ramdisk options: " + ex.Message); }
+            }
+            throw;
+        }
         string all = string.Join("\n", lines);
         var match = Regex.Match(all, @"\{[0-9a-fA-F-]{36}\}");
         if (rc != 0 || !match.Success)
