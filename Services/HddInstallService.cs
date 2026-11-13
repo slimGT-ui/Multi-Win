@@ -113,6 +113,7 @@ public class HddInstallService
             if (!File.Exists(bootSdi))
                 throw new IOException("This image has no sources\\boot.sdi — cannot create the ramdisk boot entry.");
 
+            BypassService.ValidateTarget(isoLetter + "\\", custom);
             L($"Copying Setup files to {setupDir}...");
             Directory.CreateDirectory(setupDir);
             setupDirCreated = true;
