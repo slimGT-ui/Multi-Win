@@ -196,7 +196,7 @@ public class UsbService
                 L($"  {pct:F1}% · {Fmt(done)} / {Fmt(total)} · {Fmt((long)bps)}/s");
             }
         }
-        dst.Flush();
+        dst.Flush(flushToDisk: true);
         L("Raw write finished.");
         if (verify)
             UsbCheckService.VerifyRaw(isoPath, target.DeviceId, L, progress, ct);
