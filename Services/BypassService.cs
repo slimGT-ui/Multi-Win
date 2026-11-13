@@ -12,8 +12,18 @@ public static class BypassService
 
     public static void Inject(string usbRoot, string arch, WindowsCustom c, Action<string> L)
     {
-        string warch = arch == "x86" ? "x86" : arch == "arm64" ? "arm64" : "amd64";
+        if (!c.HasTweaks()) return;
+
         string user = SanitizeUser(c.Username);
+        bool hasUnattend = c.BypassTpm || c.BypassNro || user.Length > 0 ||
+            c.SkipPrivacy || c.PreventBitLocker || c.HostLocale;
+        if (!hasUnattend)
+        {
+            if (c.EmptyAppraiser) ApplyEmptyAppraiser(usbRoot, L);
+            return;
+        }
+
+        string warch = arch == "x86" ? "x86" : arch == "arm64" ? "arm64" : "amd64";
         string userXml = System.Security.SecurityElement.Escape(user) ?? "";
         string tzXml;
         try { tzXml = System.Security.SecurityElement.Escape(TimeZoneInfo.Local.Id) ?? ""; }
@@ -101,6 +111,38 @@ public static class BypassService
         if (c.PreventBitLocker) on.Add("BitLocker block");
         if (c.HostLocale) on.Add("host timezone");
         L($"Setup tweaks written to {Path.GetFileName(target)}: {string.Join(", ", on)}.");
+        if (c.EmptyAppraiser) ApplyEmptyAppraiser(usbRoot, L);
+    }
+
+    private static void ApplyEmptyAppraiser(string root, Action<string> L)
+    {
+        string appraiser = Path.Combine(root, "sources", "appraiserres.dll");
+        if (!File.Exists(appraiser))
+        {
+            L("appraiserres.dll not found, skipping.");
+            return;
+        }
+
+        string backup = appraiser + ".bak";
+        string temp = appraiser + ".multiwin.tmp";
+        if (File.Exists(backup))
+            throw new IOException("Cannot apply appraiser tweak: appraiserres.dll.bak already exists; refusing to overwrite it.");
+        try
+        {
+            File.WriteAllBytes(temp, Array.Empty<byte>());
+            File.Move(appraiser, backup);
+            try { File.Move(temp, appraiser); }
+            catch
+            {
+                if (!File.Exists(appraiser) && File.Exists(backup)) File.Move(backup, appraiser);
+                throw;
+            }
+        }
+        finally
+        {
+            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+        }
+        L("appraiserres.dll emptied (original preserved as .bak).");
     }
 
     private static string SanitizeUser(string n)
