@@ -21,8 +21,8 @@ public static class UsbCheckService
         long free;
         try { free = new DriveInfo(root).AvailableFreeSpace; }
         catch (Exception ex) { throw new IOException($"Could not read free space on {usbLetter}.", ex); }
-        if (free < 32L * 1024 * 1024)
-            throw new IOException($"Not enough free space on {usbLetter} for the bad-block test (at least 32 MB required).");
+        if (free < 64L * 1024 * 1024)
+            throw new IOException($"Not enough free space on {usbLetter} for the bad-block test (at least 64 MB required).");
 
         long testSize = free > 1024L * 1024 * 1024
             ? 256L * 1024 * 1024
