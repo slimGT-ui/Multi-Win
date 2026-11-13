@@ -474,7 +474,9 @@ public class UsbService
             string b64 = EncodePowerShell($"Dismount-DiskImage -ImagePath {q}");
             using var p = StartProcess("powershell",
                 "-NoProfile -NonInteractive -EncodedCommand " + b64, out var ro, out var re, null);
-            WaitForExitCancellable(p, ro, re, CancellationToken.None);
+            int rc = WaitForExitCancellable(p, ro, re, CancellationToken.None);
+            if (rc != 0)
+                throw new IOException($"PowerShell failed to dismount the ISO (exit code {rc}).");
         }
         catch (Exception ex) { L("Warning: could not dismount ISO: " + ex.Message); return; }
         L("ISO dismounted.");
