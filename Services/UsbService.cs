@@ -89,6 +89,7 @@ public class UsbService
                     throw new IOException(
                         $"USB drive too small: {Fmt((long)target.SizeBytes)}, need {Fmt(needUsb)}.");
                 CheckUefiNtfsAsset(L);
+                AssertUsbDisk(disk, target);
                 L($"Preparing USB (diskpart: clean, {partStyle}, NTFS, active)...");
                 string usbLetterNtfs = PrepareUsb(disk, Emit, ct, "ntfs", volumeLabel ?? "MULTIWIN", partStyle);
                 L($"USB ready as {usbLetterNtfs}");
@@ -126,6 +127,7 @@ public class UsbService
             if (fat32PartitionSizeMb > 0)
                 L("Large USB detected: creating a 30,000 MB FAT32 partition (Windows format limit); remaining space will stay unused.");
 
+            AssertUsbDisk(disk, target);
             L($"Preparing USB (diskpart: clean, {partStyle}, FAT32, active)...");
             string usbLetter = PrepareUsb(disk, Emit, ct, "fat32", volumeLabel ?? "MULTIWIN",
                 partStyle, fat32PartitionSizeMb);
