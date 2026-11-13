@@ -117,6 +117,8 @@ public class UsbService
             if (plan == CopyPlan.ConvertEsd)
                 RequireTempSpace(isoLetter, L);
 
+            BypassService.ValidateTarget(isoLetter + "\\", custom);
+
             const long fat32SafePartitionBytes = 30000L * 1024 * 1024;
             if (needUsbFat > fat32SafePartitionBytes)
                 throw new IOException(
