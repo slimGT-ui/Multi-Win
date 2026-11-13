@@ -21,9 +21,14 @@ public static class BypassService
             throw new IOException("The ISO already contains sources\\appraiserres.dll.bak; Multi-Win refuses to overwrite that backup.");
         if (!hasUnattend) return;
 
-        string rootAnswer = Path.Combine(root, "autounattend.xml");
-        string oemAnswer = Path.Combine(root, "sources", "$OEM$", "$", "Panther", "unattend.xml");
-        if (File.Exists(rootAnswer) || File.Exists(oemAnswer))
+        string[] answerFiles =
+        {
+            Path.Combine(root, "autounattend.xml"),
+            Path.Combine(root, "sources", "autounattend.xml"),
+            Path.Combine(root, "sources", "unattend.xml"),
+            Path.Combine(root, "sources", "$OEM$", "\u0024\u0024", "Panther", "unattend.xml")
+        };
+        if (answerFiles.Any(File.Exists))
             throw new IOException("The ISO already contains an unattended answer file. Multi-Win refuses to overwrite or conflict with custom setup settings.");
     }
 
