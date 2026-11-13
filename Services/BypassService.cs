@@ -16,6 +16,9 @@ public static class BypassService
         string user = SanitizeUser(c.Username);
         bool hasUnattend = c.BypassTpm || c.BypassNro || user.Length > 0 ||
             c.SkipPrivacy || c.PreventBitLocker || c.HostLocale;
+        if (c.EmptyAppraiser &&
+            File.Exists(Path.Combine(root, "sources", "appraiserres.dll.bak")))
+            throw new IOException("The ISO already contains sources\\appraiserres.dll.bak; Multi-Win refuses to overwrite that backup.");
         if (!hasUnattend) return;
 
         string rootAnswer = Path.Combine(root, "autounattend.xml");
