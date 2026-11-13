@@ -961,6 +961,13 @@ public partial class MainWindow : Window
                 return;
             }
 
+            if (family == "Windows" && ntfsMode && PartBox.SelectedIndex == 1)
+            {
+                StatusText.Text = "GPT + NTFS is not generally UEFI-bootable.";
+                Log("Choose FAT32 for GPT/UEFI boot, or MBR + NTFS for BIOS / NTFS-capable UEFI. No USB formatting was performed.");
+                return;
+            }
+
             StatusText.Text = "Flashing USB...";
             SpeedText.Text = "";
             Progress.IsIndeterminate = true;
