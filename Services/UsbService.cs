@@ -395,9 +395,11 @@ public class UsbService
         string vol = SanitizeLabel(label);
         string script = TempScriptPath("multiwin-diskpart");
         string convert = style == PartitionStyle.Gpt ? "convert gpt" : "convert mbr";
+        // UEFI firmware expects a GPT FAT32 boot volume to be marked as an EFI System Partition.
+        string partitionKind = style == PartitionStyle.Gpt && fsLower == "fat32" ? "efi" : "primary";
         string partition = partitionSizeMb > 0
-            ? $"create partition primary size={partitionSizeMb}\n"
-            : "create partition primary\n";
+            ? $"create partition {partitionKind} size={partitionSizeMb}\n"
+            : $"create partition {partitionKind}\n";
         string active = style == PartitionStyle.Gpt ? "" : "active\n";
         File.WriteAllText(script,
             $"select disk {disk}\nclean\n{convert}\n{partition}" +
