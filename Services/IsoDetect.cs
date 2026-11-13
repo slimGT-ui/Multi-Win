@@ -97,6 +97,10 @@ public static class IsoDetect
     public static DetectedOs RefineWindowsName(string mountedRoot, DetectedOs current)
     {
         if (current.OsFamily != "Windows") return current;
+        // Windows Server shares build numbers with desktop Windows releases.
+        // Keep an explicit Server filename classification instead of relabeling it.
+        if (current.Name.Contains("Server", StringComparison.OrdinalIgnoreCase))
+            return current with { FromContents = true };
         try
         {
             string setup = mountedRoot + @"\setup.exe";
