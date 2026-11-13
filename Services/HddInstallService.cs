@@ -141,12 +141,22 @@ public class HddInstallService
                 try { Bcd("deletevalue {bootmgr} bootsequence", L, CancellationToken.None); }
                 catch (Exception ex) { L("Rollback warning: could not clear one-shot boot sequence: " + ex.Message); }
             }
+            bool bootEntryRemoved = createdBcdId == null;
             if (createdBcdId != null)
             {
-                try { Bcd($"delete {createdBcdId} /f", L, CancellationToken.None); }
-                catch (Exception ex) { L("Rollback warning: could not remove temporary boot entry: " + ex.Message); }
+                try
+                {
+                    EnsureOwnedSetupEntry(createdBcdId, L);
+                    Bcd($"delete {createdBcdId} /f", L, CancellationToken.None);
+                    bootEntryRemoved = true;
+                }
+                catch (Exception ex)
+                {
+                    L("Rollback warning: could not remove temporary boot entry: " + ex.Message);
+                    L("Keeping HDD setup files in place to avoid leaving a boot entry that points to missing files.");
+                }
             }
-            if (setupDirCreated)
+            if (setupDirCreated && bootEntryRemoved)
             {
                 try { Directory.Delete(setupDir, recursive: true); }
                 catch (Exception ex) { L("Rollback warning: could not remove setup files: " + ex.Message); }
