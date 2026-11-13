@@ -165,7 +165,6 @@ public class HddInstallService
             {
                 try
                 {
-                    EnsureOwnedSetupEntry(createdBcdId, L);
                     Bcd($"delete {createdBcdId} /f", L, CancellationToken.None);
                     bootEntryRemoved = true;
                 }
@@ -178,7 +177,6 @@ public class HddInstallService
             {
                 try
                 {
-                    EnsureOwnedRamdiskEntry(createdRamdiskId, L);
                     Bcd($"delete {createdRamdiskId} /f", L, CancellationToken.None);
                     ramdiskEntryRemoved = true;
                 }
