@@ -21,12 +21,22 @@ public class CatalogService
     {
         var devPath = Path.GetFullPath(Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Data", "catalog.json"));
-        var file = File.Exists(_path) ? _path : devPath;
-        if (!File.Exists(file)) return new();
-        var json = File.ReadAllText(file);
-        var items = JsonSerializer.Deserialize<List<WindowsImage>>(json,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
-        return items.Where(IsSane).ToList();
+        foreach (string file in new[] { _path, _path + ".bak", devPath }.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!File.Exists(file)) continue;
+            try
+            {
+                var json = File.ReadAllText(file);
+                var items = JsonSerializer.Deserialize<List<WindowsImage>>(json,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (items != null) return items.Where(IsSane).ToList();
+            }
+            catch
+            {
+                // Try the backup or development catalog instead of aborting app startup.
+            }
+        }
+        return new();
     }
 
     public async Task<int> UpdateFromUrlAsync(string url, CancellationToken ct = default)
@@ -56,9 +66,19 @@ public class CatalogService
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        if (File.Exists(_path))
-            File.Copy(_path, _path + ".bak", overwrite: true);
-        await File.WriteAllTextAsync(_path, json, ct).ConfigureAwait(false);
+        string tempPath = _path + ".tmp";
+        try
+        {
+            await File.WriteAllTextAsync(tempPath, json, ct).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+            if (File.Exists(_path))
+                File.Copy(_path, _path + ".bak", overwrite: true);
+            File.Move(tempPath, _path, overwrite: true);
+        }
+        finally
+        {
+            try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+        }
         return items.Count;
     }
 
@@ -70,7 +90,7 @@ public class CatalogService
         if (!string.IsNullOrWhiteSpace(i.DownloadUrl))
         {
             if (!Uri.TryCreate(i.DownloadUrl, UriKind.Absolute, out var u)) return false;
-            if (u.Scheme != Uri.UriSchemeHttp && u.Scheme != Uri.UriSchemeHttps) return false;
+            if (u.Scheme != Uri.UriSchemeHttps) return false;
         }
         if (!string.IsNullOrWhiteSpace(i.Sha256))
         {
