@@ -449,6 +449,7 @@ public class UsbService
     private static string MountIso(string isoPath, Action<string> emit, CancellationToken ct)
     {
         string? found = null;
+        ct.ThrowIfCancellationRequested();
         try
         {
             string q = ToPsSingleQuoted(Path.GetFullPath(isoPath));
@@ -546,6 +547,7 @@ public class UsbService
     private static Process StartProcess(string exe, string args,
         out Task readOut, out Task readErr, Action<string>? onLine)
     {
+        ct.ThrowIfCancellationRequested();
         var psi = new ProcessStartInfo(exe, args)
         {
             UseShellExecute = false,
@@ -569,7 +571,8 @@ public class UsbService
             while (!p.WaitForExit(250))
                 ct.ThrowIfCancellationRequested();
             Task.WaitAll(readOut, readErr);
-            ct.ThrowIfCancellationRequested();
+            // Once the child process has exited, return its result. A late
+            // cancellation must not hide a completed destructive operation.
             return p.ExitCode;
         }
         catch
