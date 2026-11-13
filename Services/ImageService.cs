@@ -172,6 +172,13 @@ public class ImageService
             var range = resp.Content.Headers.ContentRange;
             if (range?.From != existing || range.Unit != "bytes")
                 throw new IOException("Server returned an invalid Content-Range for the resumed download.");
+            if (range.Length.HasValue && resp.Content.Headers.ContentLength.HasValue &&
+                existing + resp.Content.Headers.ContentLength.Value > range.Length.Value)
+                throw new IOException("Server returned a range larger than the advertised file size.");
+        }
+        else if (resp.StatusCode == HttpStatusCode.PartialContent)
+        {
+            throw new IOException("Server returned a partial response without a requested byte range.");
         }
 
         var total = (resp.Content.Headers.ContentLength ?? -1L);
