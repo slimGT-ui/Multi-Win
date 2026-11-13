@@ -547,7 +547,6 @@ public class UsbService
     private static Process StartProcess(string exe, string args,
         out Task readOut, out Task readErr, Action<string>? onLine)
     {
-        ct.ThrowIfCancellationRequested();
         var psi = new ProcessStartInfo(exe, args)
         {
             UseShellExecute = false,
@@ -593,6 +592,7 @@ public class UsbService
 
     internal static void RunEncodedPowerShell(string script, Action<string>? onLine, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         string b64 = EncodePowerShell(script);
         using var p = StartProcess("powershell",
             "-NoProfile -NonInteractive -EncodedCommand " + b64, out var ro, out var re, onLine);
@@ -602,6 +602,7 @@ public class UsbService
 
     private static int Run(string exe, string args, Action<string>? onLine, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         using var p = StartProcess(exe, args, out var readOut, out var readErr, onLine);
         return WaitForExitCancellable(p, readOut, readErr, ct);
     }
