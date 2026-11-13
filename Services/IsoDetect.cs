@@ -19,7 +19,8 @@ public static class IsoDetect
 
         if (s.Contains("linux") && s.Contains("server"))
             return lin(Prettify(stem), "linux", 2048, "Linux");
-        if (s.Contains("server"))
+        if (s.Contains("server") &&
+            (s.Contains("windows") || s.StartsWith("server") || s.Contains("winserver")))
             return win("Windows Server");
 
         if (s.Contains("26h2") || s.Contains("25h2") || s.Contains("24h2") || s.Contains("23h2") ||
