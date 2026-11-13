@@ -896,6 +896,10 @@ public partial class MainWindow : Window
                 }
                 Log("Hash OK.");
             }
+            else if (!isLocal)
+            {
+                Log("WARNING: this catalog entry has no SHA256 checksum; the downloaded ISO cannot be independently authenticated.");
+            }
 
             string family = img.OsFamily;
             if (!isLocal)
