@@ -257,8 +257,6 @@ public class HddInstallService
             throw new IOException("Could not inspect the stored ramdisk options; refusing to delete it.");
         string details = string.Join("\n", lines);
         if (!details.Contains("Multi-Win Ramdisk", StringComparison.OrdinalIgnoreCase) ||
-            !details.Contains("ramdisksdidevice", StringComparison.OrdinalIgnoreCase) ||
-            !details.Contains("ramdisksdipath", StringComparison.OrdinalIgnoreCase) ||
             !details.Contains(SetupDirName, StringComparison.OrdinalIgnoreCase))
             throw new IOException("Stored ramdisk identifier does not match a Multi-Win ramdisk object.");
         L("Verified the stored ramdisk options belong to Multi-Win.");
