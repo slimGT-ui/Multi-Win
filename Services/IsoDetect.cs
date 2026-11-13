@@ -17,6 +17,11 @@ public static class IsoDetect
 
 
 
+        if (s.Contains("linux") && s.Contains("server"))
+            return lin(Prettify(stem), "linux", 2048, "Linux");
+        if (s.Contains("server"))
+            return win("Windows Server");
+
         if (s.Contains("26h2") || s.Contains("25h2") || s.Contains("24h2") || s.Contains("23h2") ||
             s.Contains("26100") || s.Contains("26200") || s.Contains("26300"))
             return win("Windows 11");
@@ -46,7 +51,6 @@ public static class IsoDetect
 
         if (s.Contains("windows"))
         {
-            if (s.Contains("server")) return win("Windows Server");
             if (s.Contains("11")) return win("Windows 11");
             if (s.Contains("10")) return win("Windows 10");
             if (s.Contains("8.1") || s.Contains("8_1") || s.Contains("81")) return win("Windows 8.1");
@@ -54,7 +58,6 @@ public static class IsoDetect
             if (s.Contains("7")) return win("Windows 7");
             if (s.Contains("vista")) return win("Windows Vista");
             if (s.Contains("xp")) return win("Windows XP");
-            if (s.Contains("server")) return win("Windows Server");
             return win("Windows");
         }
         var m = Regex.Match(s, @"(^|[-_. ])win(dows)?[-_. ]?(\d+\.?\d*|xp|vista)?");
