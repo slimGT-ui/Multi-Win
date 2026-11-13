@@ -414,6 +414,7 @@ public class UsbService
         try
         {
             int disk = ParseDiskNumber(target.DeviceId);
+            AssertUsbDisk(disk, target);
             return QueryUsbLetter(disk, CancellationToken.None);
         }
         catch { return null; }
