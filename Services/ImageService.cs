@@ -170,11 +170,16 @@ public class ImageService
         if (existing > 0)
         {
             var range = resp.Content.Headers.ContentRange;
-            if (range?.From != existing || range.Unit != "bytes")
-                throw new IOException("Server returned an invalid Content-Range for the resumed download.");
-            if (range.Length.HasValue && resp.Content.Headers.ContentLength.HasValue &&
-                existing + resp.Content.Headers.ContentLength.Value > range.Length.Value)
-                throw new IOException("Server returned a range larger than the advertised file size.");
+            long? responseLength = resp.Content.Headers.ContentLength;
+            bool invalidRange = range?.Unit != "bytes" || range.From != existing ||
+                !range.To.HasValue || (range.Length.HasValue && range.To.Value != range.Length.Value - 1) ||
+                (responseLength.HasValue && range.To.HasValue &&
+                    responseLength.Value != range.To.Value - range.From!.Value + 1);
+            if (invalidRange)
+            {
+                try { File.Delete(destPath); } catch { }
+                throw new IOException("Server returned an invalid or incomplete Content-Range for the resumed download.");
+            }
         }
         else if (resp.StatusCode == HttpStatusCode.PartialContent)
         {
@@ -209,7 +214,10 @@ public class ImageService
         }
         sw.Stop();
         await dst.FlushAsync(ct).ConfigureAwait(false);
-        var finalBps = sw.Elapsed.TotalSeconds > 0 ? (read - existing) / sw.Elapsed.TotalSeconds : 0;
+        long received = read - existing;
+        if (total >= 0 && received != total)
+            throw new IOException($"Download was truncated: received {received} of {total} bytes.");
+        var finalBps = sw.Elapsed.TotalSeconds > 0 ? received / sw.Elapsed.TotalSeconds : 0;
         progress?.Report(new DownloadProgress(read, fullTotal > 0 ? fullTotal : read, finalBps, 100));
     }
 
@@ -223,6 +231,8 @@ public class ImageService
         if (IsMicrosoftHost(url)) ApplyMicrosoftHeaders(req);
         using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         resp.EnsureSuccessStatusCode();
+        if (resp.StatusCode != HttpStatusCode.OK)
+            throw new IOException($"Server returned unexpected HTTP status {(int)resp.StatusCode} for a fresh download.");
         ThrowIfHtmlPage(resp, url);
         var total = resp.Content.Headers.ContentLength ?? -1L;
         await using var src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
@@ -238,6 +248,8 @@ public class ImageService
             var pct = total > 0 ? (double)read / total * 100 : -1;
             progress?.Report(new DownloadProgress(read, total, read / Math.Max(sw.Elapsed.TotalSeconds, 0.001), pct));
         }
+        if (total >= 0 && read != total)
+            throw new IOException($"Download was truncated: received {read} of {total} bytes.");
         progress?.Report(new DownloadProgress(read, total > 0 ? total : read, read / Math.Max(sw.Elapsed.TotalSeconds, 0.001), 100));
     }
 
