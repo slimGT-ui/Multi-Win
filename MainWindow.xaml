@@ -295,7 +295,7 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <ComboBox x:Name="FsBox" Height="34" ToolTip="FAT32 splits install.wim (BIOS+UEFI safe). NTFS is fast, no split.">
+                    <ComboBox x:Name="FsBox" Height="34" ToolTip="FAT32 splits install.wim and supports BIOS/UEFI. NTFS is fast; BIOS or NTFS-capable UEFI only.">
                         <ComboBoxItem Content="FAT32 (split, BIOS+UEFI safe)" IsSelected="True"/>
                         <ComboBoxItem Content="NTFS (fast, no split)"/>
                     </ComboBox>
@@ -307,7 +307,7 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Text="Partition scheme:" VerticalAlignment="Center" Opacity="0.7" FontSize="12" Margin="0,0,10,0"/>
-                    <ComboBox Grid.Column="1" x:Name="PartBox" Height="32" ToolTip="MBR boots on BIOS and UEFI. GPT is UEFI-only.">
+                    <ComboBox Grid.Column="1" x:Name="PartBox" Height="32" ToolTip="MBR supports BIOS and most UEFI with FAT32. GPT is UEFI-only and requires FAT32.">
                         <ComboBoxItem Content="MBR (BIOS + UEFI)" IsSelected="True"/>
                         <ComboBoxItem Content="GPT (UEFI only)"/>
                     </ComboBox>
