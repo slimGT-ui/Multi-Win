@@ -101,6 +101,8 @@ public static class BypassService
             Directory.CreateDirectory(dir);
             target = Path.Combine(dir, "unattend.xml");
         }
+        if (File.Exists(target))
+            throw new IOException($"An answer file already exists at '{target}'. Multi-Win refuses to overwrite custom unattended setup settings.");
         File.WriteAllText(target, sb.ToString(), new UTF8Encoding(false));
 
         var on = new List<string>();
