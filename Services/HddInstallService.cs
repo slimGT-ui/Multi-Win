@@ -168,8 +168,8 @@ public class HddInstallService
         }
         if (st.BcdId != null)
         {
-            try { Bcd($"delete {st.BcdId} /f", L, CancellationToken.None); }
-            catch (Exception ex) { L("Could not delete boot entry (already gone?): " + ex.Message); }
+            EnsureOwnedSetupEntry(st.BcdId, L);
+            Bcd($"delete {st.BcdId} /f", L, CancellationToken.None);
         }
         for (int i = 0; i < 3; i++)
         {
@@ -195,13 +195,26 @@ public class HddInstallService
         catch (Exception ex) { L("Remove failed: " + ex.Message); }
     }
 
+    private static void EnsureOwnedSetupEntry(string guid, Action<string> L)
+    {
+        var lines = new List<string>();
+        int rc = Run("bcdedit", $"/enum {guid}", lines.Add, CancellationToken.None);
+        if (rc != 0)
+            throw new IOException("Could not inspect the stored boot entry; refusing to remove HDD setup files.");
+        string details = string.Join("\n", lines);
+        if (!details.Contains("Multi-Win Setup (auto-removable)", StringComparison.OrdinalIgnoreCase) ||
+            !details.Contains(SetupDirName, StringComparison.OrdinalIgnoreCase))
+            throw new IOException("Stored BCD identifier does not match a Multi-Win setup entry; refusing to delete it.");
+        L("Verified the stored BCD entry belongs to Multi-Win.");
+    }
+
     private static void WriteCleanupScript(string setupDir, string guid)
     {
         string cmd = Path.Combine(setupDir, "remove-hdd-setup.cmd");
         File.WriteAllText(cmd,
             "@echo off\r\n" +
             "REM Removes the Multi-Win one-shot Setup entry and this folder. Run as admin.\r\n" +
-            $"bcdedit /delete {guid} /f\r\n" +
+            $"bcdedit /enum {guid} | findstr /i /c:\"Multi-Win Setup (auto-removable)\" >nul && bcdedit /enum {guid} | findstr /i /c:\"MULTIWIN-SETUP\" >nul && bcdedit /delete {guid} /f\r\n" +
             "schtasks /delete /tn \"MultiWinCleanup\" /f >nul 2>&1\r\n" +
             "cd /d \"%~dp0..\"\r\n" +
             $"rmdir /s /q \"{setupDir}\"\r\n",
