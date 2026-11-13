@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using WinMultiInstaller.Models;
 
@@ -48,11 +49,22 @@ public class CatalogService
         using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         using var resp = await http.GetAsync(url, System.Net.Http.HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         resp.EnsureSuccessStatusCode();
+        if (resp.RequestMessage?.RequestUri?.Scheme != Uri.UriSchemeHttps)
+            throw new IOException("Catalog download redirected to a non-HTTPS URL; refusing.");
         if ((resp.Content.Headers.ContentLength ?? 0) > MaxCatalogBytes)
             throw new IOException("Catalog file too large, refusing.");
-        string json = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-        if (json.Length > MaxCatalogBytes)
-            throw new IOException("Catalog file too large, refusing.");
+
+        await using var input = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while ((read = await input.ReadAsync(chunk.AsMemory(0, chunk.Length), ct).ConfigureAwait(false)) > 0)
+        {
+            if (buffer.Length + read > MaxCatalogBytes)
+                throw new IOException("Catalog file too large, refusing.");
+            await buffer.WriteAsync(chunk.AsMemory(0, read), ct).ConfigureAwait(false);
+        }
+        string json = Encoding.UTF8.GetString(buffer.ToArray());
         var items = JsonSerializer.Deserialize<List<WindowsImage>>(json,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
             ?? throw new IOException("Catalog is empty or invalid.");
