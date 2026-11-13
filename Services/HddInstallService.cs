@@ -32,13 +32,13 @@ public class HddInstallService
                 if (d.DriveType != DriveType.Fixed || !d.IsReady) continue;
                 string dir = Path.Combine(d.RootDirectory.FullName.TrimEnd('\\'), SetupDirName);
                 if (!Directory.Exists(dir)) continue;
-                string? guid = null;
                 string bf = Path.Combine(dir, BcdFileName);
-                if (File.Exists(bf))
-                {
-                    guid = File.ReadAllText(bf).Trim();
-                    if (!Regex.IsMatch(guid, @"^\{[0-9a-fA-F-]{36}\}$")) guid = null;
-                }
+                if (!File.Exists(bf)) continue;
+
+                string guid = File.ReadAllText(bf).Trim();
+                if (!Regex.IsMatch(guid, @"^\{[0-9a-fA-F-]{36}\}$")) continue;
+
+                // Do not treat an arbitrary folder with this name as an installation.
                 return new HddState(true, dir, guid);
             }
             catch { }
@@ -84,6 +84,10 @@ public class HddInstallService
         if (Directory.Exists(setupDir))
             throw new IOException($"{setupDir} already exists — remove the previous HDD setup first.");
 
+        string? createdBcdId = null;
+        bool setupDirCreated = false;
+        bool bootSequenceSet = false;
+
         L("Mounting ISO...");
         string isoLetter = UsbService.MountIsoImage(isoPath);
         try
@@ -98,6 +102,7 @@ public class HddInstallService
 
             L($"Copying Setup files to {setupDir}...");
             Directory.CreateDirectory(setupDir);
+            setupDirCreated = true;
             var lines = new List<string>();
             int rc = Run("robocopy", $"{isoLetter}\\ {setupDir} /E /R:2 /W:5 /MT:8",
                 l => { lock (lines) lines.Add(l); L("  " + l.Trim()); }, ct);
@@ -108,6 +113,7 @@ public class HddInstallService
 
             L("Registering one-shot boot entry...");
             string guid = BcdCopyDefault("Multi-Win Setup (auto-removable)", L, ct);
+            createdBcdId = guid;
             File.WriteAllText(Path.Combine(setupDir, BcdFileName), guid);
             string wimPath = $"[{driveRoot}]\\{SetupDirName}\\sources\\boot.wim";
             string sdiPath = $"\\{SetupDirName}\\sources\\boot.sdi";
@@ -118,6 +124,7 @@ public class HddInstallService
             Bcd($"set {guid} winpe yes", L, ct);
             Bcd($"set {guid} detecthal yes", L, ct);
             Bcd($"bootsequence {guid}", L, ct);
+            bootSequenceSet = true;
 
             WriteCleanupScript(setupDir, guid);
             L("Done. Reboot to start Windows Setup. Default boot entry unchanged — " +
@@ -126,6 +133,22 @@ public class HddInstallService
         }
         catch
         {
+            // Roll back any boot configuration and files created by this attempt.
+            if (bootSequenceSet)
+            {
+                try { Bcd("deletevalue {bootmgr} bootsequence", L, CancellationToken.None); }
+                catch (Exception ex) { L("Rollback warning: could not clear one-shot boot sequence: " + ex.Message); }
+            }
+            if (createdBcdId != null)
+            {
+                try { Bcd($"delete {createdBcdId} /f", L, CancellationToken.None); }
+                catch (Exception ex) { L("Rollback warning: could not remove temporary boot entry: " + ex.Message); }
+            }
+            if (setupDirCreated)
+            {
+                try { Directory.Delete(setupDir, recursive: true); }
+                catch (Exception ex) { L("Rollback warning: could not remove setup files: " + ex.Message); }
+            }
             try { UsbService.DismountIsoImage(isoPath); } catch { }
             throw;
         }
@@ -160,8 +183,11 @@ public class HddInstallService
         {
 
             string cmd = Path.Combine(st.SetupDir, "remove-hdd-setup.cmd");
-            if (File.Exists(cmd))
-                Run("schtasks", $"/create /tn \"MultiWinCleanup\" /tr \"\\\"{cmd}\\\"\" /sc onstart /ru SYSTEM /f", L, CancellationToken.None);
+            if (!File.Exists(cmd))
+                throw new IOException("Cleanup script is missing; cannot safely schedule removal.");
+            int rc = Run("schtasks", $"/create /tn \"MultiWinCleanup\" /tr \"\\\"{cmd}\\\"\" /sc onstart /ru SYSTEM /f", L, CancellationToken.None);
+            if (rc != 0)
+                throw new IOException($"Could not schedule cleanup (schtasks exit code {rc}).");
             L($"Folder is locked, cleanup scheduled. Run {cmd} as admin after reboot.");
         }
         catch (Exception ex) { L("Remove failed: " + ex.Message); }
