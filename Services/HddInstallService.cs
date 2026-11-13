@@ -241,7 +241,7 @@ public class HddInstallService
             string cmd = Path.Combine(st.SetupDir, "remove-hdd-setup.cmd");
             if (!File.Exists(cmd))
                 throw new IOException("Cleanup script is missing; cannot safely schedule removal.");
-            int rc = Run("schtasks", $"/create /tn \"MultiWinCleanup\" /tr \"cmd.exe /c \\\"\\\"{cmd}\\\"\\\"\" /sc onstart /ru SYSTEM /f", L, CancellationToken.None);
+            int rc = Run("schtasks", $"/create /tn \"MultiWinCleanup\" /tr \"cmd.exe /c {cmd}\" /sc onstart /ru SYSTEM /f", L, CancellationToken.None);
             if (rc != 0)
                 throw new IOException($"Could not schedule cleanup (schtasks exit code {rc}).");
             L($"Folder is locked, cleanup scheduled. Run {cmd} as admin after reboot.");
