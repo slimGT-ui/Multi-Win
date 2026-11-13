@@ -93,6 +93,7 @@ public class UsbService
                 L($"Preparing USB (diskpart: clean, {partStyle}, NTFS, active)...");
                 string usbLetterNtfs = PrepareUsb(disk, Emit, ct, "ntfs", volumeLabel ?? "MULTIWIN", partStyle);
                 L($"USB ready as {usbLetterNtfs}");
+                AssertUsbDisk(disk, target);
                 ct.ThrowIfCancellationRequested();
                 int rcNtfs = Run("robocopy",
                     $"{isoLetter}\\ {usbLetterNtfs}\\ /E /R:2 /W:5 /MT:8",
@@ -168,6 +169,7 @@ public class UsbService
             $"select disk {disk}\nonline disk noerr\nattributes disk clear readonly noerr\nclean\nexit\n");
         try
         {
+            AssertUsbDisk(disk, target);
             var lines = new List<string>();
             int rc = Run("diskpart", $"/s \"{script}\"", lines.Add, ct);
             string all = string.Join("\n", lines);
@@ -176,6 +178,7 @@ public class UsbService
         }
         finally { try { File.Delete(script); } catch { } }
 
+        AssertUsbDisk(disk, target);
         L($"Writing {Fmt(total)} raw to disk {disk} (do not unplug)...");
         using var src = File.OpenRead(isoPath);
         using var dst = new FileStream(target.DeviceId, FileMode.Open,
