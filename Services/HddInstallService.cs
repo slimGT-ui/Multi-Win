@@ -206,6 +206,18 @@ public class HddInstallService
         }
         if (st.BcdId != null)
         {
+            if (st.RamdiskId == null)
+            {
+                // Older releases changed the shared {ramdiskoptions} object.
+                // If it still points into this folder, deleting the files could
+                // break other recovery entries that also reference that object.
+                var legacyLines = new List<string>();
+                int legacyRc = Run("bcdedit", "/enum {ramdiskoptions}", legacyLines.Add, CancellationToken.None);
+                if (legacyRc == 0 &&
+                    string.Join("\n", legacyLines).Contains(SetupDirName, StringComparison.OrdinalIgnoreCase))
+                    throw new IOException("This is a legacy HDD setup using the shared {ramdiskoptions} object. Its previous recovery settings cannot be restored safely, so automatic removal was stopped to protect Windows Recovery.");
+            }
+
             EnsureOwnedSetupEntry(st.BcdId, L);
             if (st.RamdiskId != null) EnsureOwnedRamdiskEntry(st.RamdiskId, L);
             Bcd($"delete {st.BcdId} /f", L, CancellationToken.None);
