@@ -13,7 +13,7 @@ public class ImageService
     {
         var h = new HttpClientHandler
         {
-            AutomaticDecompression = DecompressionMethods.All,
+            AutomaticDecompression = DecompressionMethods.None,
             AllowAutoRedirect = true,
             MaxAutomaticRedirections = 10,
             UseCookies = true,
@@ -39,6 +39,15 @@ public class ImageService
 
     private static void ApplyMicrosoftHeaders(HttpRequestMessage req) =>
         req.Headers.Referrer = new Uri("https://www.microsoft.com/software-download/windows11");
+
+    private static void EnsureNoHttpsDowngrade(HttpResponseMessage resp, string requestedUrl)
+    {
+        if (Uri.TryCreate(requestedUrl, UriKind.Absolute, out var requested) &&
+            requested.Scheme == Uri.UriSchemeHttps &&
+            resp.RequestMessage?.RequestUri?.Scheme != Uri.UriSchemeHttps)
+            throw new IOException("Download redirected from HTTPS to a non-HTTPS URL; refusing.");
+    }
+
 
     private static void ThrowIfHtmlPage(HttpResponseMessage resp, string url)
     {
@@ -79,6 +88,7 @@ public class ImageService
         {
             probe.Headers.Range = new RangeHeaderValue(0, 0);
             using var pr = await http.SendAsync(probe, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            EnsureNoHttpsDowngrade(pr, direct);
             string media = pr.Content.Headers.ContentType?.MediaType ?? "";
             if ((pr.StatusCode == HttpStatusCode.OK || pr.StatusCode == HttpStatusCode.PartialContent) &&
                 !media.StartsWith("text/html", StringComparison.OrdinalIgnoreCase))
@@ -87,6 +97,7 @@ public class ImageService
         string pageUrl = $"https://drive.google.com/uc?export=download&id={Uri.EscapeDataString(id)}";
         using var pageReq = new HttpRequestMessage(HttpMethod.Get, pageUrl);
         using var pageResp = await http.SendAsync(pageReq, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        EnsureNoHttpsDowngrade(pageResp, pageUrl);
         pageResp.EnsureSuccessStatusCode();
         string html = await pageResp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         var m = Regex.Match(html, @"(/uc\?export=download[^""'\s<>]*confirm[^""'\s<>]*)");
@@ -145,6 +156,7 @@ public class ImageService
             req.Headers.Range = new RangeHeaderValue(existing, null);
 
         using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        EnsureNoHttpsDowngrade(resp, url);
         if (existing > 0 && resp.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
         {
             // The partial file is not a valid resumable prefix (or is already complete).
@@ -230,6 +242,7 @@ public class ImageService
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         if (IsMicrosoftHost(url)) ApplyMicrosoftHeaders(req);
         using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        EnsureNoHttpsDowngrade(resp, url);
         resp.EnsureSuccessStatusCode();
         if (resp.StatusCode != HttpStatusCode.OK)
             throw new IOException($"Server returned unexpected HTTP status {(int)resp.StatusCode} for a fresh download.");
