@@ -184,7 +184,9 @@ public class ImageService
             var range = resp.Content.Headers.ContentRange;
             long? responseLength = resp.Content.Headers.ContentLength;
             bool invalidRange = range?.Unit != "bytes" || range.From != existing ||
-                !range.To.HasValue || (range.Length.HasValue && range.To.Value != range.Length.Value - 1) ||
+                !range.To.HasValue || range.To.Value < existing ||
+                (range.Length.HasValue && (range.Length.Value <= existing ||
+                    range.To.Value != range.Length.Value - 1)) ||
                 (responseLength.HasValue && range.To.HasValue &&
                     responseLength.Value != range.To.Value - range.From!.Value + 1);
             if (invalidRange)
@@ -227,6 +229,8 @@ public class ImageService
         sw.Stop();
         await dst.FlushAsync(ct).ConfigureAwait(false);
         long received = read - existing;
+        if (read == 0)
+            throw new IOException("The server returned an empty ISO download.");
         if (total >= 0 && received != total)
             throw new IOException($"Download was truncated: received {received} of {total} bytes.");
         var finalBps = sw.Elapsed.TotalSeconds > 0 ? received / sw.Elapsed.TotalSeconds : 0;
@@ -261,6 +265,8 @@ public class ImageService
             var pct = total > 0 ? (double)read / total * 100 : -1;
             progress?.Report(new DownloadProgress(read, total, read / Math.Max(sw.Elapsed.TotalSeconds, 0.001), pct));
         }
+        if (read == 0)
+            throw new IOException("The server returned an empty ISO download.");
         if (total >= 0 && read != total)
             throw new IOException($"Download was truncated: received {read} of {total} bytes.");
         progress?.Report(new DownloadProgress(read, total > 0 ? total : read, read / Math.Max(sw.Elapsed.TotalSeconds, 0.001), 100));
