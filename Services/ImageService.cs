@@ -171,7 +171,7 @@ public class ImageService
             // Never append it, and never treat an error response as a successful download.
             resp.EnsureSuccessStatusCode();
             ThrowIfHtmlPage(resp, url);
-            await resp.DisposeAsync().ConfigureAwait(false);
+            resp.Dispose();
             await DownloadOnceFreshAsync(url, destPath, progress, ct).ConfigureAwait(false);
             return;
         }
