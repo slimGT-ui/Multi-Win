@@ -30,7 +30,7 @@ public class HddInstallService
             try
             {
                 if (d.DriveType != DriveType.Fixed || !d.IsReady) continue;
-                string dir = Path.Combine(d.RootDirectory.FullName.TrimEnd('\\'), SetupDirName);
+                string dir = Path.Combine(d.RootDirectory.FullName, SetupDirName);
                 if (!Directory.Exists(dir)) continue;
                 string bf = Path.Combine(dir, BcdFileName);
                 if (!File.Exists(bf)) continue;
@@ -56,7 +56,7 @@ public class HddInstallService
                 if (d.DriveType != DriveType.Fixed || !d.IsReady) continue;
                 string root = d.RootDirectory.FullName.TrimEnd('\\');
                 if (root.Length != 2 || root[1] != ':') continue;
-                string dir = Path.Combine(root, SetupDirName);
+                string dir = Path.Combine(root + "\\", SetupDirName);
                 list.Add(new HddTarget(root, dir, d.AvailableFreeSpace));
             }
             catch { }
@@ -69,18 +69,20 @@ public class HddInstallService
         IProgress<string>? log = null, CancellationToken ct = default)
     {
         void L(string m) => log?.Report(m);
-        if (string.IsNullOrWhiteSpace(driveRoot) || driveRoot.Length != 2 || driveRoot[1] != ':')
+        if (string.IsNullOrWhiteSpace(driveRoot) || driveRoot.Length != 2 ||
+            !char.IsAsciiLetter(driveRoot[0]) || driveRoot[1] != ':')
             throw new ArgumentException("Pick an internal drive (e.g. C:).");
+        driveRoot = char.ToUpperInvariant(driveRoot[0]) + ":";
         if (!File.Exists(isoPath))
             throw new FileNotFoundException("ISO file not found.", isoPath);
         long isoLen = new FileInfo(isoPath).Length;
         long need = isoLen + 512L * 1024 * 1024;
-        var drive = new DriveInfo(driveRoot);
+        var drive = new DriveInfo(driveRoot + "\\");
         if (drive.AvailableFreeSpace < need)
             throw new IOException(
                 $"Not enough free space on {driveRoot} (need {UsbService.Fmt(need)}, free {UsbService.Fmt(drive.AvailableFreeSpace)}).");
 
-        string setupDir = Path.Combine(driveRoot, SetupDirName);
+        string setupDir = Path.Combine(driveRoot + "\\", SetupDirName);
         if (Directory.Exists(setupDir))
             throw new IOException($"{setupDir} already exists — remove the previous HDD setup first.");
 
