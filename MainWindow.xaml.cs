@@ -958,7 +958,11 @@ public partial class MainWindow : Window
             {
                 Log($"Formatting {usb!.DeviceId} ({usb!.Model}, {usb!.PartitionStyle}, " +
                     (fsMode == UsbService.FileSystemMode.NtfsDirect ? "NTFS direct" : "FAT32 split") + ")...");
-                await Task.Run(() => _usb.WriteImage(isoPath, usb!, arch, custom, flashLog, ct, fsMode, verify, label));
+                var partStyle = PartBox.SelectedIndex == 1
+                    ? UsbService.PartitionStyle.Gpt
+                    : UsbService.PartitionStyle.Mbr;
+                await Task.Run(() => _usb.WriteImage(isoPath, usb!, arch, custom, flashLog, ct,
+                    fsMode, verify, label, partStyle));
             }
             Progress.IsIndeterminate = false;
             Progress.Value = 100;
