@@ -884,9 +884,14 @@ public partial class MainWindow : Window
                 if (!hash.Equals(img.Sha256, StringComparison.OrdinalIgnoreCase))
                 {
                     StatusText.Text = "Hash mismatch! File is corrupted.";
-                    Log("ERROR: hash mismatch, deleting corrupted file.");
-                    try { File.Delete(isoPath); } catch { }
-                    try { File.Delete(completionMarker); } catch { }
+                    Log(isLocal
+                        ? "ERROR: local ISO hash mismatch. The original file was left untouched."
+                        : "ERROR: downloaded ISO hash mismatch. Deleting the corrupted cache entry.");
+                    if (!isLocal)
+                    {
+                        try { File.Delete(isoPath); } catch { }
+                        try { File.Delete(completionMarker); } catch { }
+                    }
                     return;
                 }
                 Log("Hash OK.");
