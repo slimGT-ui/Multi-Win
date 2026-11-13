@@ -34,13 +34,13 @@ public static class BypassService
         string user = SanitizeUser(c.Username);
         bool hasUnattend = c.BypassTpm || c.BypassNro || user.Length > 0 ||
             c.SkipPrivacy || c.PreventBitLocker || c.HostLocale;
+        ValidateTarget(usbRoot, c);
         if (!hasUnattend)
         {
             if (c.EmptyAppraiser) ApplyEmptyAppraiser(usbRoot, L);
             return;
         }
 
-        ValidateTarget(usbRoot, c);
         string warch = arch == "x86" ? "x86" : arch == "arm64" ? "arm64" : "amd64";
         string userXml = System.Security.SecurityElement.Escape(user) ?? "";
         string tzXml;
