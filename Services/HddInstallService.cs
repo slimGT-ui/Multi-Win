@@ -76,7 +76,8 @@ public class HddInstallService
 
     public void Install(string isoPath, string arch, WindowsCustom custom,
         string driveRoot, bool uefi,
-        IProgress<string>? log = null, CancellationToken ct = default)
+        IProgress<string>? log = null, CancellationToken ct = default,
+        string? editionId = null)
     {
         void L(string m) => log?.Report(m);
         if (string.IsNullOrWhiteSpace(driveRoot) || driveRoot.Length != 2 ||
@@ -113,6 +114,7 @@ public class HddInstallService
             if (!File.Exists(bootSdi))
                 throw new IOException("This image has no sources\\boot.sdi — cannot create the ramdisk boot entry.");
 
+            BypassService.ValidateEditionSelection(isoLetter + "\\", editionId);
             BypassService.ValidateTarget(isoLetter + "\\", custom);
             L($"Copying Setup files to {setupDir}...");
             Directory.CreateDirectory(setupDir);
@@ -123,6 +125,7 @@ public class HddInstallService
             L($"robocopy exit code: {rc} (0-7 = success)");
             if (rc > 7) throw new IOException($"robocopy failed, exit code {rc}.");
 
+            BypassService.ApplyEditionSelection(setupDir + "\\", editionId, L);
             BypassService.Inject(setupDir + "\\", arch, custom, L);
 
             L("Registering one-shot boot entry...");

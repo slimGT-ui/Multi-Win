@@ -12,7 +12,7 @@ Multi-Win helps you prepare installation media without juggling several utilitie
 
 ## Features
 
-- **Built-in Windows catalog** — Windows Vista, 7, 8.1, Windows 10 (20H2, 21H2, 22H2), and Windows 11 (23H2, 24H2, 25H2, 26H2).
+- **Built-in Windows catalog** — four simple choices: Windows 10, Windows 10 Pro, Windows 11, and Windows 11 Pro. The two editions of each version share one ISO; Pro selections configure Windows Setup to select the Professional edition.
 - **Bring your own ISO** — select a local `.iso`, drag and drop it into the app, or provide a direct ISO download URL.
 - **Content-aware ISO detection** — inspects files inside the image (such as Windows Setup files and Linux metadata) instead of relying only on the filename.
 - **Windows and Linux USB creation** — Windows installation media is prepared as files; Linux images are written in raw mode.
@@ -135,7 +135,7 @@ Place your image files in `Assets/`:
 
 ## Image sources
 
-The built-in catalog is maintained in [`Data/catalog.json`](Data/catalog.json). Some catalog entries use third-party Archive.org mirrors. Check the source and integrity of an ISO before using it. Multi-Win does not guarantee the availability, authenticity, or safety of third-party downloads.
+The built-in catalog is maintained in [`Data/catalog.json`](Data/catalog.json). The current Windows entries use third-party Archive.org mirrors. Check the source and integrity of an ISO before using it. Multi-Win does not guarantee the availability, authenticity, or safety of third-party downloads.
 
 ## Safety
 

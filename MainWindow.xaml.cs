@@ -959,7 +959,7 @@ public partial class MainWindow : Window
                 Progress.IsIndeterminate = true;
                 string root = hddTarget!.Root;
                 bool uefi = _hwInfo.HasUefi;
-                await Task.Run(() => _hdd.Install(isoPath, arch, custom, root, uefi, flashLog, ct));
+                await Task.Run(() => _hdd.Install(isoPath, arch, custom, root, uefi, flashLog, ct, img.EditionId));
                 Progress.IsIndeterminate = false;
                 Progress.Value = 100;
                 StatusText.Text = "Done — reboot to start Setup";
@@ -1025,7 +1025,7 @@ public partial class MainWindow : Window
                     ? UsbService.PartitionStyle.Gpt
                     : UsbService.PartitionStyle.Mbr;
                 await Task.Run(() => _usb.WriteImage(isoPath, usb!, arch, custom, flashLog, ct,
-                    fsMode, verify, label, partStyle));
+                    fsMode, verify, label, partStyle, img.EditionId));
             }
             Progress.IsIndeterminate = false;
             Progress.Value = 100;
