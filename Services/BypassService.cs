@@ -20,7 +20,7 @@ public static class BypassService
         if (!File.Exists(path)) return;
         string? existing = ReadEditionId(path);
         if (!string.Equals(existing, editionId, StringComparison.OrdinalIgnoreCase))
-            throw new IOException("The ISO already contains a conflicting sources\ei.cfg. Multi-Win will not overwrite its edition configuration.");
+            throw new IOException("The ISO already contains a conflicting sources\\ei.cfg. Multi-Win will not overwrite its edition configuration.");
     }
 
     public static void ApplyEditionSelection(string root, string? editionId, Action<string> log)
