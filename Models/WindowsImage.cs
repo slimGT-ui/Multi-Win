@@ -14,6 +14,7 @@ public record WindowsImage(
 )
 {
     public string OsFamily { get; init; } = "Windows";
+    public string? EditionId { get; init; } = null;
     public string? LocalPath { get; init; } = null;
     public string? Icon { get; init; } = null;
     public string? Vendor { get; init; } = null;
