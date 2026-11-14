@@ -60,7 +60,8 @@ public class UsbService
     public void WriteImage(string isoPath, UsbDrive target, string arch, WindowsCustom custom,
         IProgress<string>? log = null, CancellationToken ct = default,
         FileSystemMode fsMode = FileSystemMode.Fat32Split, bool verify = false,
-        string? volumeLabel = null, PartitionStyle partStyle = PartitionStyle.Mbr)
+        string? volumeLabel = null, PartitionStyle partStyle = PartitionStyle.Mbr,
+        string? editionId = null)
     {
         void L(string m) => log?.Report(m);
         long lastEmit = 0;
@@ -81,6 +82,7 @@ public class UsbService
         L($"ISO mounted as {isoLetter}");
         try
         {
+            BypassService.ValidateEditionSelection(isoLetter + "\\", editionId);
             ct.ThrowIfCancellationRequested();
             if (fsMode == FileSystemMode.NtfsDirect)
             {
@@ -100,6 +102,7 @@ public class UsbService
                     Emit, ct);
                 L($"robocopy exit code: {rcNtfs} (0-7 = success)");
                 if (rcNtfs > 7) throw new IOException($"robocopy failed, exit code {rcNtfs}.");
+                BypassService.ApplyEditionSelection(usbLetterNtfs + "\\", editionId, L);
                 FinishTweaks(usbLetterNtfs, arch, custom, L);
                 if (verify)
                 {
@@ -141,6 +144,7 @@ public class UsbService
             CopyFiles(isoLetter, usbLetter, plan,
                 SafeName(Path.GetFileNameWithoutExtension(isoPath)), L, Emit, ct);
 
+            BypassService.ApplyEditionSelection(usbLetter + "\\", editionId, L);
             FinishTweaks(usbLetter, arch, custom, L);
             if (verify)
             {
