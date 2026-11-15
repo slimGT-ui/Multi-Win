@@ -149,6 +149,10 @@ Multi-Win performs low-level disk operations and can permanently erase data on t
 
 Use the software at your own risk. The project is provided without warranty.
 
+## Development and project context
+
+The development roadmap, current implementation status, testing matrix, known risks, collaboration rules, and session handoff instructions are maintained in [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md). Contributors and future development sessions should read that file before making changes.
+
 ## License
 
 [MIT](LICENSE) © 2026 slim.
